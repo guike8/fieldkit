@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+cases/
+native/handlecheck/build/
+.DS_Store
+.venv/
+.env
+.env.*
+!.env.example
+work/
+*.sqlite3
+*.sqlite3-*
+blobs/

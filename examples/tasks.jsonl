@@ -1,0 +1,6 @@
+{"command":"username","target":"octocat","options":{"sites":["github"]}}
+{"command":"dns","target":"example.org","options":{"types":["A","AAAA","MX"]}}
+{"command":"rdap","target":"example.org","options":{"kind":"domain"}}
+{"command":"http","target":"https://example.org/"}
+{"command":"tls","target":"example.org","options":{"port":443}}
+{"command":"archive","target":"https://example.org/","options":{"limit":5}}

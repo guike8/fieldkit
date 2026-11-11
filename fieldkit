@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from fieldkit_core.cli import main
+raise SystemExit(main())

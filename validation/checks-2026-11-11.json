@@ -1,0 +1,208 @@
+{
+  "tool": "fieldkit",
+  "version": "0.2.0",
+  "validated_at": "2026-11-11T07:51:03.317478+00:00",
+  "python_offline_tests": {
+    "passed": 177,
+    "failed": 0
+  },
+  "live_checks": [
+    {
+      "command": "username",
+      "target": "octocat",
+      "status": "ok",
+      "run_id": "run_cb8917e69fe648efb884a2f0f17ef719",
+      "started_at": "2026-11-11T07:48:53.024Z",
+      "sources": 1,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "github",
+          "status": "found",
+          "reason": "Public API returned a matching identity and validated profile ID/schema",
+          "control": {
+            "status": "passed"
+          }
+        }
+      ]
+    },
+    {
+      "command": "username",
+      "target": "bsky.app",
+      "status": "ok",
+      "run_id": "run_221c833b1c2f4b03bb11fa0c7f37ceae",
+      "started_at": "2026-11-11T07:48:53.024Z",
+      "sources": 2,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "bluesky",
+          "status": "found",
+          "reason": "Public profile identity and independent stable ID matched",
+          "control": "passed"
+        }
+      ]
+    },
+    {
+      "command": "username",
+      "target": "Google",
+      "status": "ok",
+      "run_id": "run_714f8f8eda7b47de8d2e77c49d1047aa",
+      "started_at": "2026-11-11T07:48:53.024Z",
+      "sources": 2,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "youtube",
+          "status": "found",
+          "reason": "Public channel metadata matches the exact handle and stable YouTube channel ID",
+          "control": "passed"
+        }
+      ]
+    },
+    {
+      "command": "username",
+      "target": "gabelogannewell",
+      "status": "ok",
+      "run_id": "run_5d7812c72ed347fa924eaa0403d9d1ca",
+      "started_at": "2026-11-11T07:48:53.274Z",
+      "sources": 2,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "steam",
+          "status": "found",
+          "reason": "Public profile JSON matches the vanity URL and stable Steam account ID",
+          "control": "passed"
+        }
+      ]
+    },
+    {
+      "command": "username",
+      "target": "@Gargron@mastodon.social",
+      "status": "ok",
+      "run_id": "run_1b56bc513d3a4bb8937eb042fa069eab",
+      "started_at": "2026-11-11T07:48:53.409Z",
+      "sources": 2,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "mastodon",
+          "status": "found",
+          "reason": "Public profile identity and independent stable ID matched",
+          "control": "passed"
+        }
+      ]
+    },
+    {
+      "command": "username",
+      "target": "spez",
+      "status": "partial",
+      "run_id": "run_cc244861d51d468fbe1deb24cf0425e9",
+      "started_at": "2026-11-11T07:48:53.632Z",
+      "sources": 1,
+      "error_codes": [],
+      "profiles": [
+        {
+          "site": "reddit",
+          "status": "blocked",
+          "reason": "Provider denied unauthenticated access",
+          "control": "not_run"
+        }
+      ]
+    },
+    {
+      "command": "dns",
+      "target": "example.org",
+      "status": "ok",
+      "run_id": "run_6b7b837f6afa4ca1a9ac09fcafef5be4",
+      "started_at": "2026-11-11T07:48:53.692Z",
+      "sources": 2,
+      "error_codes": []
+    },
+    {
+      "command": "rdap",
+      "target": "example.org",
+      "status": "ok",
+      "run_id": "run_3e601c9042734d5291450d5b76aff118",
+      "started_at": "2026-11-11T07:48:53.733Z",
+      "sources": 2,
+      "error_codes": []
+    },
+    {
+      "command": "http",
+      "target": "https://example.org/",
+      "status": "ok",
+      "run_id": "run_73b415d940774e9a9a6d2608e4d20190",
+      "started_at": "2026-11-11T07:48:53.849Z",
+      "sources": 1,
+      "error_codes": []
+    },
+    {
+      "command": "tls",
+      "target": "example.org",
+      "status": "ok",
+      "run_id": "run_147e3d43dcb444ea84b615a9fa11a19f",
+      "started_at": "2026-11-11T07:48:53.889Z",
+      "sources": 1,
+      "error_codes": []
+    },
+    {
+      "command": "archive",
+      "target": "https://example.org/",
+      "status": "ok",
+      "run_id": "run_21da2d9c0cac4f32bd044f023a0e9cc3",
+      "started_at": "2026-11-11T07:48:53.923Z",
+      "sources": 1,
+      "error_codes": []
+    },
+    {
+      "command": "ct",
+      "target": "example.org",
+      "status": "error",
+      "run_id": "run_346f0528404f4ad1b03daa7796ab347c",
+      "started_at": "2026-11-11T07:48:53.955Z",
+      "sources": 1,
+      "error_codes": [
+        "TIMEOUT"
+      ]
+    },
+    {
+      "command": "email",
+      "target": "contact@example.org",
+      "status": "ok",
+      "run_id": "run_1e7d4a1808754e8aada56d5d39324c64",
+      "started_at": "2026-11-11T07:48:54.131Z",
+      "sources": 3,
+      "error_codes": []
+    },
+    {
+      "command": "file",
+      "target": "outputs/fieldkit/examples/tasks.jsonl",
+      "status": "ok",
+      "run_id": "run_9332de8ee06641a7b0f65859dbbe6ebb",
+      "started_at": "2026-11-11T07:48:54.357Z",
+      "sources": 1,
+      "error_codes": []
+    },
+    {
+      "command": "extract",
+      "target": "outputs/fieldkit/examples/tasks.jsonl",
+      "status": "ok",
+      "run_id": "run_5587682a886e489494816ef4d031803a",
+      "started_at": "2026-11-11T07:48:54.362Z",
+      "sources": 1,
+      "error_codes": []
+    }
+  ],
+  "live_completed": 13,
+  "live_unresolved": 2,
+  "case_verification": {
+    "ok": true,
+    "reports_checked": 15,
+    "artifacts_checked": 21,
+    "source_refs_checked": 21
+  },
+  "search_provider": "Not live-tested: no BRAVE_SEARCH_API_KEY was configured",
+  "scope": "Public fixtures only; no comparative accuracy claim; source blocks/timeouts remain unresolved."
+}
