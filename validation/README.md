@@ -1,5 +1,15 @@
 # Validation — November 11, 2026
 
+## Version 0.4.0: practitioner workbench
+
+**280 Python tests passed with zero failures/skips**, including 23 shared-workbench model tests, 12 Textual interaction tests, the real loopback browser API, and MCP workspace operations. JavaScript syntax and Node frontend workflow checks also passed.
+
+Browser verification used the real local case API: capture source evidence, save a separate assessment, create a research flow, add/run a step, observe its saved evidence, inspect graph provenance, and accept a shared-reference lead with written limitations. Case hash/reference verification passed after those actions. The TUI's real-model tests exercise the same saved flow and evidence model.
+
+The installable app shares a case directory with the TUI and agent tools. MCP exposes 22 base tools, or 37 with a fixed case, including evidence, entities, flows, correlation review, notes, and workspace export. The hosted synthetic preview was successfully deployed; browser verification of that hosted URL stopped at its ChatGPT sign-in gate. Local browser workflows were fully checked.
+
+See [the v0.4 check summary](checks-2026-11-11-v04.json).
+
 ## Version 0.3.0: MCP and Telegram
 
 The extended suite passed **233 tests with no failures or skips**, including real official-SDK modern/legacy stdio clients and a loopback Streamable HTTP client. The installable package exposes 22 MCP tools, or 24 when fixed-case tools are configured.

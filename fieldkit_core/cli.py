@@ -52,6 +52,8 @@ def capabilities():
             "orchestration": {"run": "fieldkit run JOB.json (or - for stdin)",
                               "batch": "fieldkit batch JOBS.jsonl (or - for stdin)", "max_batch_jobs": 100,
                               "mcp": "fieldkit mcp --workspace ABSOLUTE_DIRECTORY (stdio default)",
+                              "tui": "fieldkit tui --case CASE_DIRECTORY",
+                              "app": "fieldkit app --workspace ABSOLUTE_DIRECTORY --case CASE_DIRECTORY",
                               "case": "--case DIR saves report and captured evidence; case init/show/export/verify are local"},
             "optional_providers": {"brave_search": {"configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY")),
                                                        "key_environment_variable": "BRAVE_SEARCH_API_KEY"}},
@@ -264,6 +266,8 @@ def make_parser():
         if command == "batch":
             command_parser.add_argument("--jobs", type=bounded_int(1, 8), default=2)
     sub.add_parser("mcp", help="Serve MCP tools; run fieldkit mcp --help for server options", add_help=False)
+    sub.add_parser("tui", help="Open the interactive terminal investigation workbench", add_help=False)
+    sub.add_parser("app", help="Open the local browser case application", add_help=False)
     case_parser = sub.add_parser("case", help="Local evidence ledger and source-hash verification")
     add_global(case_parser, child=True)
     case_parser.add_argument("case_action", choices=["init", "show", "export", "verify"])
@@ -313,14 +317,15 @@ def case_command(args):
 
 def main(argv=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments and arguments[0] == "mcp":
-        from .mcp_server import main as mcp_main
-        return mcp_main(arguments[1:])
+    if arguments and arguments[0] in {"mcp", "tui", "app"}:
+        from importlib import import_module
+        module = {"mcp": "mcp_server", "tui": "tui", "app": "app"}[arguments[0]]
+        return import_module("." + module, package="fieldkit_core").main(arguments[1:])
     args = None
     try:
         args = make_parser().parse_args(arguments)
-        if args.command == "mcp":
-            raise Failure("ARGUMENT_ERROR", "Put MCP server options after 'fieldkit mcp'; see fieldkit mcp --help", "invalid")
+        if args.command in {"mcp", "tui", "app"}:
+            raise Failure("ARGUMENT_ERROR", f"Put interactive options after 'fieldkit {args.command}'; see its --help", "invalid")
         config = Config(args.timeout, args.max_results, args.max_requests, args.max_bytes, args.case)
         if args.command in {"capabilities", "schema"}:
             data = command_schema(args.schema_command) if args.command == "schema" and args.schema_command else capabilities()

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101719">
+  <title>Fieldkit — Investigation workspace</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="#overview" aria-label="Fieldkit overview"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>fieldkit<span class="brand-caption">INVESTIGATION WORKSPACE</span></span></a>
+      <button class="case-switch" id="caseButton"><span class="case-monogram">FK</span><span><small>ACTIVE CASE</small><strong id="sidebarCaseTitle">Your investigation</strong></span><span class="muted">⌄</span></button>
+      <div class="nav-label">INVESTIGATE</div>
+      <nav id="navigation"></nav>
+      <div class="sidebar-divider"></div>
+      <div class="nav-label">WORKSPACE</div>
+      <button class="nav-item" id="collectButton"><span data-icon="terminal"></span><span>Run a collector</span><span class="key-hint">R</span></button>
+      <button class="nav-item" id="exportButton"><span data-icon="download"></span><span>Export case</span></button>
+      <div class="sidebar-bottom"><div class="workspace-status"><span class="status-dot"></span><span id="modeName">Connecting workspace</span></div><p id="modeDescription">Evidence, research, and review in one case.</p><span class="version">FIELDKIT <b>WORKBENCH</b></span></div>
+    </aside>
+    <div class="main-shell">
+      <header class="topbar"><button class="mobile-menu icon-button" id="mobileMenu" aria-label="Toggle navigation"><span data-icon="menu"></span></button><div class="breadcrumb"><span>Cases</span><span class="crumb-slash">/</span><strong id="breadcrumbCase">Your investigation</strong></div><div class="top-actions"><button class="command-trigger" id="commandButton"><span data-icon="search"></span><span>Search or jump to…</span><kbd>⌘ K</kbd></button><button class="primary" id="captureButton"><span data-icon="plus"></span><span>Capture evidence</span></button></div></header>
+      <main id="main" tabindex="-1"><div class="loading-state"><span class="loader"></span><h1>Opening your workspace</h1><p>Gathering evidence and research steps.</p></div></main>
+      <footer class="statusbar"><span><span class="status-dot"></span><span id="saveStatus">Ready</span></span><span id="footerStats">Fieldkit investigation workspace</span><button id="keyboardButton">Keyboard shortcuts <kbd>?</kbd></button></footer>
+    </div>
+  </div>
+  <dialog id="modal" aria-labelledby="modalTitle"><div class="modal-head"><div><span class="eyebrow" id="modalEyebrow">YOUR CASE</span><h2 id="modalTitle"></h2></div><button class="icon-button" id="modalClose" aria-label="Close dialog"><span data-icon="close"></span></button></div><div id="modalContent"></div></dialog>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <noscript><p>This workspace needs JavaScript. Your case data stays in the configured local workspace or this browser.</p></noscript>
+</body>
+</html>

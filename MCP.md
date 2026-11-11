@@ -9,10 +9,10 @@ Requires Python **3.11+**. From the repository:
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[mcp,telegram]'
+python -m pip install -e '.[mcp,telegram,tui]'
 ```
 
-The `mcp` extra installs the official MCP Python SDK (`>=2.3,<3`); `telegram` installs Beautiful Soup for the adapted Bellingcat Telegram extractor. The core CLI and native public Telegram helpers use the standard library.
+The `mcp` extra installs the official MCP Python SDK (`>=2.3,<3`); `telegram` installs Beautiful Soup for the adapted Bellingcat Telegram extractor; `tui` adds the terminal case interface. The core CLI, local browser server, and native public Telegram helpers use the standard library.
 
 The native username backend includes a macOS arm64 executable. Rebuild it on another platform with `make -C native/handlecheck`. An installed wheel also carries its C++ source and Makefile under the environment's `share/fieldkit/native/handlecheck` directory; `fieldkit doctor` reports backend availability.
 
@@ -60,7 +60,53 @@ Use the client's MCP `tools/list` operation. Every command in Fieldkit's manifes
 {"name":"fieldkit_bellingcat_telegram","arguments":{"target":"https://t.me/telegram/1","download_media":false,"max_media":3}}
 ```
 
-`fieldkit_capabilities` exposes the current command/provider manifest. When a fixed `--case` directory is configured, `fieldkit_case_show` and `fieldkit_case_verify` inspect that case. Run `tools/list` to see the exact installed schemas; optional dependencies and provider availability are reported in results.
+`fieldkit_capabilities` exposes the current command/provider manifest. Without a fixed case, the server advertises **22 tools**. Configuring `--case` adds the ledger tools `fieldkit_case_show` and `fieldkit_case_verify` plus 13 practitioner workspace tools, for **37 tools**. Run `tools/list` to see the exact installed schemas; optional dependencies and provider availability are reported in results.
+
+## Practitioner workspace tools
+
+Point `--case` at the directory used by `fieldkit app` and `fieldkit tui`. These operations share evidence, analyst assessments, entities, links, flows, and notes with both interfaces:
+
+| Tool | Operation |
+| --- | --- |
+| `fieldkit_case_workspace` | Read the investigation snapshot and current research question. |
+| `fieldkit_case_update` | Set the case title and question. |
+| `fieldkit_evidence_add` | Add an analyst-supplied observation with source context. |
+| `fieldkit_evidence_review` | Record `unreviewed`, `corroborated`, `contested`, or `discarded` with a note. |
+| `fieldkit_note_add` | Add reasoning linked to existing evidence IDs. |
+| `fieldkit_entity_add` | Add a typed, labeled entity. |
+| `fieldkit_entity_link` | Add a relationship supported by existing evidence IDs. |
+| `fieldkit_flow_create` | Plan a research flow with validated collector steps. |
+| `fieldkit_flow_add_step` | Extend a flow with another declared collector operation. |
+| `fieldkit_flow_run_step` | Run one step, save its collector report, and update the step status. |
+| `fieldkit_correlations_generate` | Read candidate links derived from shared handles or explicit outbound references. |
+| `fieldkit_correlation_review` | Accept/reject a lead with a recorded rationale. |
+| `fieldkit_case_export` | Return a full investigation JSON or Markdown export. |
+
+For example, capture a supplied observation:
+
+```json
+{"name":"fieldkit_evidence_add","arguments":{"title":"Public profile links to project site","content":"The supplied profile includes an explicit project link.","source_url":"https://example.org/profile"}}
+```
+
+Use the returned evidence `data.id` when linking entities. Plan a collector flow:
+
+```json
+{"name":"fieldkit_flow_create","arguments":{"title":"Verify the supplied public URL","steps":[{"command":"http","target":"https://example.org/","options":{}},{"command":"archive","target":"https://example.org/","options":{"limit":10}}]}}
+```
+
+Use that response's flow `data.id` and a `data.steps[].id`:
+
+```json
+{"name":"fieldkit_flow_run_step","arguments":{"flow_id":"RETURNED_FLOW_ID","step_id":"RETURNED_STEP_ID"}}
+```
+
+Review a returned correlation candidate with explicit reasoning:
+
+```json
+{"name":"fieldkit_correlation_review","arguments":{"id":"RETURNED_CORRELATION_ID","decision":"accepted","note":"Both captured profiles explicitly link to the same project page. Keep this as a working association; ownership remains unestablished."}}
+```
+
+`fieldkit_case_export` takes `{"format":"json"}` or `{"format":"markdown"}` and returns export text in `data.content`. The client decides where to save that result. Tool calls cannot choose an arbitrary server-side output filename. Collection-ledger verification and full investigation export serve different purposes; the latter includes review notes, flows, entity links, and ledger references. See [WORKBENCH.md](WORKBENCH.md) for the interactive workflow.
 
 Results include JSON `structuredContent` and a text representation. Failed or incomplete tool operations remain structured and set MCP `isError`; inspect the envelope's status and error codes. A missing provider result, blocked page, or rate limit does not establish absence of an account.
 

@@ -1,8 +1,25 @@
 # Using Fieldkit from an agent
 
-Fieldkit is non-interactive. Normal commands write one JSON envelope to stdout and expose explicit statuses. Invoke it with an argument array; never interpolate an investigation target into a shell command. Global options work before or after the command. Successful `case export` intentionally writes the chosen export format directly, unless `--output` saves the export and returns a JSON receipt.
+Fieldkit's collector commands are non-interactive. Normal commands write one JSON envelope to stdout and expose explicit statuses. Invoke them with an argument array; never interpolate an investigation target into a shell command. Global options work before or after normal collector commands. `app`, `tui`, and `mcp` start their own interfaces and take their options after the subcommand. Successful `case export` intentionally writes the chosen export format directly, unless `--output` saves the export and returns a JSON receipt.
 
-MCP clients can use the same command layer through individually named tools. Install `.[mcp,telegram]`, configure `fieldkit-mcp` with an explicit workspace, and discover schemas through MCP `tools/list`. See [MCP.md](MCP.md) and [examples/mcp-config.json](examples/mcp-config.json). No local client configuration is modified automatically.
+MCP clients use the same command layer and the practitioner workspace through individually named tools. Install `.[mcp,telegram,tui]`, configure `fieldkit-mcp` with an explicit workspace and fixed case, and discover schemas through MCP `tools/list`. See [MCP.md](MCP.md), [WORKBENCH.md](WORKBENCH.md), and [examples/mcp-config.json](examples/mcp-config.json). No local client configuration is modified automatically.
+
+## Work in the investigator's case
+
+Use the same absolute case directory as the browser app and TUI. With `--case` configured, MCP exposes **37 tools**, including 13 practitioner workspace operations in addition to the collection and case-ledger tools. Without a fixed case, its 22 collector/discovery tools remain available.
+
+A useful agent loop is:
+
+1. Read `fieldkit_case_workspace` to understand the question, existing evidence, notes, entities, flow steps, and reviewed leads.
+2. Use `fieldkit_evidence_add` for supplied observations, or run a collector so its original report and bounded sources enter the ledger.
+3. Preserve evidence IDs when adding a note or entity relationship. `fieldkit_entity_link` requires supporting evidence references.
+4. Create an explicit plan with `fieldkit_flow_create` and `fieldkit_flow_add_step`; execute a selected step with `fieldkit_flow_run_step`. Keep unresolved provider results visible in the case.
+5. Inspect `fieldkit_correlations_generate`. A shared handle or shared outbound URL is a lead with supporting records. Record a reason through `fieldkit_correlation_review` before accepting or rejecting it.
+6. Return an investigation export with `fieldkit_case_export`, retaining the ledger references and review rationale.
+
+Workspace IDs are returned under `data`; reuse them rather than constructing IDs. A flow returns `id` and `steps[].id`, while evidence, entities, notes, and correlation candidates expose their own `id`. Tool schemas remain authoritative for argument names. Workspace writes are logged as analyst actions; original collector records and source hashes remain preserved.
+
+The app and TUI can refresh and show changes made by agents. Review states belong to the investigation's assessment layer: `unreviewed`, `corroborated`, `contested`, or `discarded`. An accepted correlation remains a working association with rationale; it is not an automatic identity merge or ownership conclusion. Distinguish a source's observed publication time from the time Fieldkit collected it.
 
 ## Discover first
 

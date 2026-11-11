@@ -1,14 +1,14 @@
 {
   "schema_version": "1.0",
   "tool": "fieldkit",
-  "version": "0.3.0",
-  "run_id": "run_ee5da79ddbf94a1e9ffb18e595410c2e",
+  "version": "0.4.0",
+  "run_id": "run_594e2e836ecc474786ac46ebfe89d1aa",
   "command": "capabilities",
   "target": null,
   "status": "ok",
   "data": {
     "name": "fieldkit",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "schema_version": "1.0",
     "default_output": "json",
     "commands": [
@@ -1003,6 +1003,8 @@
       "batch": "fieldkit batch JOBS.jsonl (or - for stdin)",
       "max_batch_jobs": 100,
       "mcp": "fieldkit mcp --workspace ABSOLUTE_DIRECTORY (stdio default)",
+      "tui": "fieldkit tui --case CASE_DIRECTORY",
+      "app": "fieldkit app --workspace ABSOLUTE_DIRECTORY --case CASE_DIRECTORY",
       "case": "--case DIR saves report and captured evidence; case init/show/export/verify are local"
     },
     "optional_providers": {
@@ -1074,8 +1076,8 @@
   "relationships": [],
   "sources": [],
   "timing": {
-    "started_at": "2026-11-11T08:12:18.411Z",
-    "completed_at": "2026-11-11T08:12:18.412Z",
+    "started_at": "2026-11-11T08:37:55.063Z",
+    "completed_at": "2026-11-11T08:37:55.063Z",
     "elapsed_ms": 0
   },
   "untrusted_content": true

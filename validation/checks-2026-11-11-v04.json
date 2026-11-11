@@ -1,0 +1,53 @@
+{
+  "tool": "fieldkit",
+  "version": "0.4.0",
+  "python_tests": {
+    "passed": 280,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frontend_checks": {
+    "node_workflow_checks": "passed",
+    "javascript_syntax": "passed"
+  },
+  "ui_browser_checks": [
+    "capture evidence with source URL and retained text",
+    "review evidence separately from original source",
+    "create flow and add collector step",
+    "execute step and observe immutable evidence result",
+    "review shared-reference candidate with written reasoning",
+    "inspect graph supporting evidence and source hashes"
+  ],
+  "shared_case": {
+    "evidence_items": 5,
+    "flows": 2,
+    "notes": 1,
+    "entities": 7,
+    "links": 5
+  },
+  "case_integrity": {
+    "ok": true,
+    "reports_checked": 5,
+    "artifacts_checked": 4,
+    "source_refs_checked": 4
+  },
+  "interfaces": [
+    "CLI",
+    "MCP",
+    "Textual TUI",
+    "local browser app"
+  ],
+  "textual_version": "8.2.8",
+  "mcp_tool_count": {
+    "without_fixed_case": 22,
+    "with_fixed_case": 37
+  },
+  "hosted_preview": {
+    "url": "https://fieldkit-investigations.seithargroup.chatgpt.site",
+    "published": true,
+    "audience": "owner-private",
+    "content": "synthetic browser-local example",
+    "verification": "Sites deployment succeeded; rendered browser verification requires user ChatGPT sign-in"
+  },
+  "privacy": "Only synthetic training evidence used; no raw development cases or session credentials included in distribution."
+}

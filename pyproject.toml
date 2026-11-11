@@ -15,11 +15,14 @@ license-files = ["native/handlecheck/third_party/nlohmann/LICENSE.MIT", "third_p
 [project.optional-dependencies]
 mcp = ["mcp>=2.3,<3"]
 telegram = ["beautifulsoup4>=4.12,<5"]
+tui = ["textual>=8.2,<9"]
 dev = ["build>=1.2,<2"]
 
 [project.scripts]
 fieldkit = "fieldkit_core.cli:main"
 fieldkit-mcp = "fieldkit_core.mcp_server:main"
+fieldkit-tui = "fieldkit_core.tui:main"
+fieldkit-app = "fieldkit_core.app:main"
 
 [project.urls]
 Repository = "https://github.com/guike8/fieldkit"
@@ -31,6 +34,9 @@ version = {attr = "fieldkit_core.__version__"}
 [tool.setuptools.packages.find]
 include = ["fieldkit_core*"]
 exclude = ["tests*", "native*", "work*"]
+
+[tool.setuptools.package-data]
+fieldkit_core = ["web_assets/*.html", "web_assets/*.js", "web_assets/*.css"]
 
 [tool.setuptools.data-files]
 "share/fieldkit/native/handlecheck" = [
@@ -49,7 +55,7 @@ exclude = ["tests*", "native*", "work*"]
   "native/handlecheck/third_party/nlohmann/json.hpp",
   "native/handlecheck/third_party/nlohmann/LICENSE.MIT",
 ]
-"share/fieldkit" = ["README.md", "AGENT_USAGE.md", "MCP.md", "THIRD_PARTY.md"]
+"share/fieldkit" = ["README.md", "AGENT_USAGE.md", "MCP.md", "THIRD_PARTY.md", "WORKBENCH.md"]
 "share/fieldkit/examples" = ["examples/*.json", "examples/*.jsonl"]
 "share/fieldkit/third_party/bellingcat" = ["third_party/bellingcat/LICENSE", "third_party/bellingcat/VENDOR.md"]
 "share/fieldkit/validation" = ["validation/*.md", "validation/*.json"]

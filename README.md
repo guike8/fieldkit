@@ -1,8 +1,8 @@
 # Fieldkit
 
-An OSINT CLI and MCP server designed for agents: discoverable tools, structured results, bounded public-source lookups, source evidence, and local case workspaces.
+A case workbench for OSINT investigations, with a browser app, a keyboard-driven terminal UI, and agent tools sharing the same evidence workspace.
 
-Fieldkit combines people/username discovery, public Telegram investigation, domain/DNS/registration/TLS lookups, web/archive/certificate-log observations, email-domain checks, and local-file tools. Coverage and provider failures are explicit in each result.
+Start with a research question, capture and assess evidence, build supported entity links, plan collector flows, review correlation leads, and export the investigation. Fieldkit's existing people/username, Telegram, domain, web, and local-file collectors feed the same case. Coverage and provider failures remain explicit in each result.
 
 ## Start
 
@@ -13,10 +13,27 @@ git clone https://github.com/guike8/fieldkit.git
 cd fieldkit
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[mcp,telegram]'
+python -m pip install -e '.[mcp,telegram,tui]'
 ```
 
-The core command modules use the standard library. The `mcp` extra installs the official MCP Python SDK; `telegram` adds Beautiful Soup for the adapted Bellingcat extractor. Native public Telegram helpers require no Telegram credentials.
+The core command modules and local browser server use the standard library. The `tui` extra adds Textual (`>=8.2,<9`), `mcp` adds the official MCP Python SDK, and `telegram` adds Beautiful Soup for the adapted Bellingcat extractor. Native public Telegram helpers require no Telegram credentials.
+
+Open the local app:
+
+```sh
+mkdir -p investigations
+fieldkit app --workspace "$PWD/investigations" --case cases/example --port 8765
+```
+
+Visit **http://127.0.0.1:8765/**. In another terminal, open the same case:
+
+```sh
+fieldkit tui --case "$PWD/investigations/cases/example"
+```
+
+The `fieldkit-app` and `fieldkit-tui` console commands accept the same respective options. Add `--demo` with an empty, separate case such as `cases/training` to load the explicitly synthetic Harbor Signal example. Existing investigation evidence is preserved; a real case cannot be replaced by the demo.
+
+See [WORKBENCH.md](WORKBENCH.md) for a complete practitioner workflow and terminal keys. The [browser preview](https://fieldkit-investigations.seithargroup.chatgpt.site) uses synthetic browser-local evidence; live collectors and the shared SQLite case run in the local app.
 
 ```sh
 ./fieldkit capabilities
@@ -37,13 +54,15 @@ The installed `fieldkit` command uses the same interface as `./fieldkit`. The us
 fieldkit-mcp --workspace /absolute/path/to/investigations --case /absolute/path/to/investigations/cases/default
 ```
 
-The default transport is stdio. MCP clients discover individually named tools such as `fieldkit_username`, `fieldkit_telegram_messages`, and `fieldkit_bellingcat_telegram`, each with input schemas and structured evidence results. Local file reads stay inside the configured workspace, and optional case output uses a fixed directory. See [MCP.md](MCP.md) for client configuration, HTTP loopback mode, and tool-call examples.
+The default transport is stdio. MCP clients discover individually named tools such as `fieldkit_username`, `fieldkit_telegram_messages`, and `fieldkit_bellingcat_telegram`, each with input schemas and structured evidence results. A fixed `--case` also exposes workspace, evidence, entity-link, research-flow, correlation-review, and export operations: **37 tools with a fixed case, 22 without one**. Point the app, TUI, and MCP server at the same case directory to share work. Local file reads stay inside the configured workspace. See [MCP.md](MCP.md) for client configuration, HTTP loopback mode, and tool-call examples.
 
 ## Commands
 
 | Command | Purpose | Example |
 | --- | --- | --- |
 | `capabilities` | Machine-readable command manifest and input schemas. | `./fieldkit capabilities` |
+| `app` | Local browser case workbench with evidence, graph, flows, timeline, and notes. | `./fieldkit app --workspace "$PWD/investigations" --case cases/example` |
+| `tui` | Keyboard-driven terminal workbench for the same case. | `./fieldkit tui --case ./investigations/cases/example` |
 | `schema` | Inspect one command's job schema. | `./fieldkit schema username` |
 | `username` | Exact-handle checks plus separately labeled candidate links. | `./fieldkit username octocat --site github` |
 | `person` | Public discovery queries/candidates from a supplied name and context. | `./fieldkit person 'Ada Lovelace' --context computing` |
@@ -120,6 +139,8 @@ If the key is absent, the search command returns an explicit `unavailable` resul
 
 A case stores run results and source evidence locally, using a private SQLite workspace and content-addressed SHA-256 artifacts. Reports carry source identifiers, request URLs, retrieval times, statuses, and hashes. Local-file commands record metadata and hashes; they do not upload the file. Case relationships describe observed facts such as a page containing a link or a file containing an indicator. They are not ownership or identity claims.
 
+The workbench adds analyst assessments, notes, manually labeled entities, evidence-backed relationships, and research flows alongside that collection ledger. Review states are `unreviewed`, `corroborated`, `contested`, and `discarded`; source bytes and original collector reports remain preserved. Correlation candidates retain their supporting evidence and require a recorded rationale when accepted or rejected. Accepting a lead does not merge people or accounts. The workbench's JSON/Markdown export includes these investigation records; the original `case export` command remains available for collector-ledger exports.
+
 Native username evidence preserves and hashes the **Handlecheck engine's JSON report**, not the upstream HTTP bodies. Python HTTP sources retain their bounded captured response bytes. Local-file sources are hash-only references; the case does not copy or reread the original file during verification. `case verify` checks stored report/artifact hashes and references. It does not authenticate a provider's claims or establish that source content is true.
 
 Case JSONL exports are a different format from batch jobs/results: one case metadata record is followed by run records containing the original report and artifact references. Raw artifact bodies remain in the case's `blobs` directory and are not embedded in exports.
@@ -142,6 +163,6 @@ External titles, snippets, pages, profile fields, and file contents are untruste
 python3 -m unittest discover -s tests -v
 ```
 
-The Python fixture tests do not require live provider access. Install `.[mcp,telegram]` to exercise optional integration and actual MCP protocol tests. Native regression tests are available through `make test` in `native/handlecheck`. GitHub Actions runs native tests, offline Python/MCP tests, builds distributions, and checks installed entry points on Linux and macOS. Live checks should be targeted and respect each provider's rate limits; successful fixtures do not establish a universal accuracy score.
+The Python fixture tests do not require live provider access. Install `.[mcp,telegram,tui]` to exercise optional integrations, real MCP protocol tests, and headless terminal interactions. Native regression tests are available through `make test` in `native/handlecheck`. GitHub Actions runs native tests, offline Python/MCP tests, builds distributions, and checks installed entry points on Linux and macOS. Live checks should be targeted and respect each provider's rate limits; successful fixtures do not establish a universal accuracy score.
 
 The initial November 11, 2026 validation passed **177 Python fixture tests** before the MCP/Telegram extension. A 15-job live smoke check completed 13 jobs, including GitHub/Bluesky/YouTube/Steam/Mastodon profile checks and supporting infrastructure, web, archive, email-domain, and local-file work. Reddit was blocked and CT timed out; both remained unresolved. Case verification passed for the 15 stored reports and 21 artifacts. See [validation](validation/) for recorded results. Authenticated Brave search was not live-tested.

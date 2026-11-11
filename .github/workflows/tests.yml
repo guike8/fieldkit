@@ -36,9 +36,11 @@ jobs:
       - name: Native regression tests
         run: make -C native/handlecheck test
       - name: Install Python package and optional integrations
-        run: python -m pip install '.[mcp,telegram,dev]'
+        run: python -m pip install '.[mcp,telegram,tui,dev]'
       - name: Offline unit and MCP protocol tests
         run: python -m unittest discover -s tests -v
+      - name: Browser workflow checks
+        run: node tests/frontend_test.mjs
       - name: Build wheel and source distribution
         run: python -m build --outdir "$RUNNER_TEMP/fieldkit-dist"
       - name: Reinstall built wheel
@@ -49,3 +51,5 @@ jobs:
           fieldkit doctor
           fieldkit capabilities > fieldkit-capabilities.json
           fieldkit-mcp --help
+          fieldkit-tui --help
+          fieldkit-app --help
