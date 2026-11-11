@@ -1,0 +1,15 @@
+# Authentication/database bootstrap only. No ingestion process runs, and all
+# model endpoints point to a closed container-local port until normal start.
+services:
+  auto-ontology:
+    environment:
+      CONNECTION_STRINGS: "${FIELDKIT_AO_INFRA_CONNECTION_STRINGS:-}"
+      DEFAULT_MODELS_ENDPOINT: http://127.0.0.1:9/v1
+      DEFAULT_MODELS_API_KEY: disabled-for-infrastructure-bootstrap
+      DEFAULT_MODELS_MODEL: openai/fieldkit-infrastructure-only
+      REASONING_ENDPOINT: http://127.0.0.1:9/v1
+      REASONING_MODEL: openai/fieldkit-infrastructure-only
+      NON_REASONING_ENDPOINT: http://127.0.0.1:9/v1
+      NON_REASONING_MODEL: openai/fieldkit-infrastructure-only
+      EMBED_ENDPOINT: http://127.0.0.1:9/v1
+      RERANK_ENDPOINT: http://127.0.0.1:9/v1

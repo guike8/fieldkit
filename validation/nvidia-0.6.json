@@ -1,0 +1,59 @@
+{
+  "version": "0.6.0",
+  "runtime": "rust",
+  "upstream_nvidia_commit": "fc43a82600e18b19d159c52023f54f5572f537ac",
+  "checks": {
+    "rust_tests_passed": 114,
+    "rust_tests_failed": 0,
+    "rustfmt": "passed",
+    "clippy_warnings_denied": "passed",
+    "browser_workflow": "passed",
+    "nvidia_bootstrap_and_semantic_control_contract_files": 3,
+    "release_build": "passed"
+  },
+  "actual_service": {
+    "gateway": "http://127.0.0.1:18760",
+    "native_arm64_images": "built",
+    "authentication": "verified with real private API token",
+    "read_only_sqlite_connector": "verified",
+    "catalog_tables": 13,
+    "catalog_columns": 86,
+    "catalog_foreign_keys": 18,
+    "catalog_present": true,
+    "configured_connection": true,
+    "status": "needs_compilation",
+    "semantic_compilation_complete": false,
+    "live_embedding_or_inference_executed": false,
+    "required_remaining_configuration": "NVIDIA_API_KEY"
+  },
+  "mcp": {
+    "official_sdk_client": "passed against native Rust server",
+    "advertised_tools": 48,
+    "actual_nvidia_gateway_readiness": "verified"
+  },
+  "workflow_fixture": {
+    "transport": "actual loopback HTTP SSE and child CLI",
+    "selection": "NVIDIA-protocol fixture selects a lower-priority, source-grounded pending job",
+    "execution": "native candidate-only collector records partial/unverified result with zero collector HTTP requests",
+    "guards": [
+      "no silent fallback",
+      "model assessments cannot self-ground source claims",
+      "exact report hashes and JSON pointers",
+      "source artifact verification",
+      "scope/providers/depth",
+      "persistent reasoning budget",
+      "100ms streaming cancellation",
+      "full successful semantic compilation required"
+    ]
+  },
+  "deployment_controls": [
+    "gateway loopback only",
+    "original case and blobs never mounted",
+    "private ignored credential files",
+    "initial one-pass compilation only",
+    "background ingestion and scheduler frozen after setup",
+    "cleanup and independent worker timeout"
+  ],
+  "release_binary_sha256": "78dd1c5f62dd867c8bf45a742d3b2302fb190caf23df472ba06e2fc9efa20987",
+  "scope": "Live model reasoning is not claimed; the model credential was not configured during validation."
+}

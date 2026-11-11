@@ -32,7 +32,29 @@ The runtime is Rust throughout: collectors, SQLite storage, discovery, ontology,
 
 Use **Tab/Shift+Tab** to switch views; **1–9/0** jump directly, **↑/↓** select records, **Enter** switches between sessions/jobs or flows/steps, and **?** opens the full keyboard guide. **t** runs one collector; its results are saved automatically.
 
-Discovery defaults to explicit public links and structured collector observations. Optional web search requires `BRAVE_SEARCH_API_KEY`. Domain scope is optional; when set, excluded follow-ups remain visible as skipped jobs. Sessions accept 1–100 collector jobs and depth 0–4. A job may make several HTTP requests, each constrained by the global request, byte, and timeout settings. Generic navigation links have lower priority than observed profiles and outbound profile links.
+Discovery defaults to explicit public links and structured collector observations. NVIDIA mode reasons over the case and chooses or proposes evidence-grounded public collectors. Optional web search requires `BRAVE_SEARCH_API_KEY`. Domain scope is optional; when set, excluded follow-ups remain visible as skipped jobs. Sessions accept 1–100 collector jobs and depth 0–4. A job may make several HTTP requests, each constrained by the global request, byte, and timeout settings. Generic navigation links have lower priority than observed profiles and outbound profile links.
+
+## NVIDIA Auto Ontology reasoning
+
+Fieldkit connects to NVIDIA's actual Auto Ontology service through its authenticated HTTP gateway. A separate normalized SQLite datasource contains selected evidence, source hashes, entity relationships, correlation leads and the pending frontier. The service ingests this catalog and compiles its semantic layer. Fieldkit retains the original case and raw source blobs.
+
+Use the [local setup](integrations/auto-ontology/README.md):
+
+```sh
+./integrations/auto-ontology/setup.sh init
+# Add NVIDIA_API_KEY to the private integrations/auto-ontology/.env file.
+./integrations/auto-ontology/setup.sh build
+./fieldkit --case cases/my-investigation nvidia export
+./integrations/auto-ontology/setup.sh start
+./integrations/auto-ontology/setup.sh connect
+./fieldkit --case cases/my-investigation nvidia status
+```
+
+In the TUI, press **d** and set **Planner** to `nvidia`, or press **m** to switch an existing discovery queue. The separate reasoning budget counts Auto Ontology questions across resumed runs (1–20); each question may use multiple upstream inference calls. Press **g** to run, **b** to inspect public rationales, SQL, selection records and citations, **z** to check readiness, and **o** to inspect the supporting original evidence. **p** cancels a pending model request or pauses after the active collector. Unavailable or invalid NVIDIA recommendations pause visibly; no silent local fallback runs.
+
+The local gateway is at `http://127.0.0.1:18760`. Setup generates a private Auto Ontology API token in `fieldkit.env`; this differs from the NVIDIA model key. Existing deployments can use `AUTO_ONTOLOGY_API_URL`, `AUTO_ONTOLOGY_API_TOKEN`, `AUTO_ONTOLOGY_TARGET_DB`, and `FIELDKIT_AUTO_ONTOLOGY_PROJECTION`, or a private connection file named by `FIELDKIT_AUTO_ONTOLOGY_ENV`.
+
+Recommendations must select a pending job or cite an exact captured value for a new allowed public collector. Fieldkit verifies source/report hashes, pointers, scope, depth, provider restrictions and budgets before executing. Model assessments are preserved with hashes and kept out of future source-evidence projections; they never become independent evidence or identity claims.
 
 ## Agent interface
 
@@ -42,6 +64,8 @@ fieldkit --case cases/example username HANDLE --sites github,gitlab,bluesky
 fieldkit --case cases/example run examples/username.json
 fieldkit --case cases/example discover HANDLE --sites github,bluesky --jobs 12 --depth 2
 fieldkit --case cases/example ontology
+fieldkit --case cases/example discover HANDLE --planner nvidia --reasoning-budget 5
+fieldkit --case cases/example nvidia ask "Which captured profiles explicitly reference the project?"
 fieldkit case verify cases/example
 fieldkit --case cases/example mcp --workspace "$PWD"
 ```
@@ -72,7 +96,7 @@ Visit http://127.0.0.1:8765/. The native server embeds the browser assets and sh
 
 Captured response bytes are retained under SHA-256 in `CASE/blobs/`, with immutable reports in `CASE/case.sqlite3`. Source publication time, collection time, collector status, analyst assessment, and correlation review remain separate. Local file/extract inputs retain hash-only references; importing an attachment explicitly preserves its bytes. Public Telegram previews are bounded observations, not complete channel histories.
 
-The ontology is currently learned deterministically from preserved structured collector output. It records concepts, typed relationship signatures, and source-attributed claims. It does not perform free-form LLM extraction from arbitrary documents. NVIDIA Auto Ontology is an optional future semantic-service integration; no NVIDIA service or model is required or silently contacted by this release.
+The local ontology learns concepts, typed relationship signatures and source-attributed claims from preserved structured collector output. NVIDIA Auto Ontology adds semantic catalog compilation and evidence-query reasoning when explicitly selected. Source excerpts stay attributed datasource rows rather than instructions in the upstream API's authoritative `evidence` slot. Free-form model statements do not alter observed claims or establish ownership.
 
 A correlation records support for both endpoints. Structured claims cite the exact relationship in a preserved report, its SHA-256, and available source hashes. Shared handles and links never automatically establish a person's identity or account ownership. `case verify` checks retained report/artifact hashes and the workspace activity chain; hashes do not certify source truth. Original captures survive reviews and rejected leads.
 

@@ -29,6 +29,10 @@ const WORKSPACE_TOOLS: &[(&str, &str)] = &[
     ("fieldkit_discovery_run", "discovery/run"),
     ("fieldkit_ontology_sync", "ontology/sync"),
     ("fieldkit_claim_review", "claims/review"),
+    ("fieldkit_discovery_configure", "discovery/configure"),
+    ("fieldkit_nvidia_status", "nvidia/status"),
+    ("fieldkit_nvidia_export", "nvidia/export"),
+    ("fieldkit_nvidia_ask", "nvidia/ask"),
 ];
 
 /// Resolve a local target without permitting symlink components or traversal.
@@ -216,7 +220,7 @@ impl Broker {
                     name,
                     description,
                     api::operation_schema(operation),
-                    false,
+                    *operation == "nvidia/status",
                 ));
             }
             for (name, description) in [

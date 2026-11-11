@@ -1,0 +1,117 @@
+name: ${FIELDKIT_AO_PROJECT:-fieldkit-auto-ontology}
+
+x-backend: &backend
+  image: fieldkit-auto-ontology-backend:fc43a826
+  platform: ${FIELDKIT_AO_PLATFORM:-linux/amd64}
+  build:
+    context: ${AUTO_ONTOLOGY_SOURCE:?Run setup.sh init to select the pinned upstream checkout}
+    dockerfile: Dockerfile
+  env_file: .env
+  user: "${FIELDKIT_AO_UID:-1000}:${FIELDKIT_AO_GID:-1000}"
+  environment: &runtime
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    INGESTION_SERVICE_URL: http://ingestion-service:3002
+    CONNECTION_STRINGS: sqlite:////fieldkit/fieldkit.sqlite
+  volumes:
+    - type: bind
+      source: ${FIELDKIT_PROJECTION_DIR:?Run setup.sh init to select the evidence projection directory}
+      target: /fieldkit
+      read_only: true
+      bind:
+        create_host_path: false
+
+x-frontend: &frontend
+  image: fieldkit-auto-ontology-frontend:fc43a826
+  platform: ${FIELDKIT_AO_PLATFORM:-linux/amd64}
+  build:
+    context: ${AUTO_ONTOLOGY_SOURCE:?Run setup.sh init}/frontend
+    dockerfile: Dockerfile
+    args:
+      PYTHON_API_URL: http://auto-ontology:3001
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    PYTHON_API_URL: http://auto-ontology:3001
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run setup.sh init}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run setup.sh init}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-auto_ontology}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend-migrate:
+    <<: *backend
+    command: [migrate]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend-migrate:
+    <<: *frontend
+    working_dir: /app/migrate
+    command: [sh, prisma/migrate.sh]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ingestion-service:
+    <<: *backend
+    profiles: [compile]
+    entrypoint:
+      - /usr/bin/tini
+      - --
+      - /usr/bin/timeout
+      - --signal=TERM
+      - --kill-after=30s
+      - "${FIELDKIT_AO_SETUP_TIMEOUT:-1800}s"
+      - /usr/local/bin/entrypoint.sh
+    command: [ingestion_service]
+    restart: "no"
+    healthcheck:
+      test: [CMD-SHELL, "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/health/live', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend-migrate:
+        condition: service_completed_successfully
+
+  auto-ontology:
+    <<: *backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend-migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    <<: *frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FIELDKIT_AO_PORT:-18760}:3000"
+    depends_on:
+      auto-ontology:
+        condition: service_healthy
+      frontend-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:

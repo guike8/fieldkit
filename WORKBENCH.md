@@ -30,6 +30,16 @@ The first collector checks the seed. Confirmed profile URLs and explicit public 
 
 Job budget counts collector attempts over the whole session, including resumed runs. A username collector can issue multiple provider requests. Global `--timeout`, `--max-requests`, `--max-results`, and `--max-bytes` constrain each collector. Depth 0 collects the seed only. Out-of-scope and excessive-depth jobs remain visible as skipped. There is no infinite crawl.
 
+## Let NVIDIA choose the next investigation
+
+Complete the [local Auto Ontology setup](integrations/auto-ontology/README.md) and check readiness with `z`. The actual service must have an authenticated connection, an ingested Fieldkit projection and a completed semantic compilation. A running gateway alone is insufficient.
+
+In a new `d` form, choose planner `nvidia` and a total reasoning budget. For an existing queue, press `m`, select `nvidia`, and save with Ctrl+S. This preserves the queue and prior captures. Press `g` to run. Explicit user-supplied seeds are collected first; NVIDIA then queries the projected evidence and proposes the next public-source collection. The job and depth budgets still apply.
+
+Press `b` to open Reasoning. Select a decision to see the public rationale, chosen command/target, original evidence references, query SQL and hashes. Press `o` for supporting captures or Enter to jump to its queued job. A rejected or unavailable recommendation is recorded and pauses the session. It does not silently revert to the local planner. Press `m` after pausing to change modes or explicitly increase the total reasoning quota; calls already attempted remain counted.
+
+New proposals must cite an exact preserved source value and pass Fieldkit's public-collector, source-hash, pointer, provider, scope and depth checks. Model assessments are retained separately and cannot supply independent evidence for another model recommendation. Existing correlation review still requires analyst rationale and preserves distinct entities.
+
 `p` requests a pause after the active collector. `q` requests a pause and waits for the current result to be preserved before closing. Reopen the same case and press `g` to resume pending work. A process interruption marks an in-flight job interrupted rather than silently repeating it; inspect Evidence for captures committed before interruption. Exhausted budgets remain exhausted when resumed.
 
 ## Inspect evidence and the ontology
@@ -67,6 +77,7 @@ Press `n` to add a note linked to selected evidence or claim citations. Record a
 | Key | Action |
 | --- | --- |
 | `d` / `g` / `p` | Plan discovery / run-resume / pause |
+| `m` / `b` / `z` | Configure selected planner / Reasoning view / NVIDIA readiness |
 | `Tab` / `Shift+Tab` | Next / previous view |
 | `1`–`9`, `0` | Jump to a view |
 | `↑` / `↓`, `j` / `k` | Select a row |

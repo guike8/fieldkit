@@ -43,6 +43,22 @@ pub const OPERATIONS: &[(&str, &str)] = &[
         "Learn case vocabulary and grounded claims from preserved reports",
     ),
     ("claims/review", "Review a sourced claim with rationale"),
+    (
+        "discovery/configure",
+        "Configure an existing discovery planner and total reasoning budget",
+    ),
+    (
+        "nvidia/status",
+        "Check the actual NVIDIA gateway, catalog and semantic-layer readiness",
+    ),
+    (
+        "nvidia/export",
+        "Refresh the separate read-only NVIDIA evidence projection",
+    ),
+    (
+        "nvidia/ask",
+        "Ask NVIDIA Auto Ontology about the current evidence and preserve its public assessment",
+    ),
 ];
 
 pub fn operation_schema(operation: &str) -> Value {
@@ -86,10 +102,18 @@ pub fn operation_schema(operation: &str) -> Value {
             vec!["id", "decision", "note"],
         ),
         "discovery/create" => (
-            json!({"kind":{"enum":["username","profile","url","domain","search"]},"seed":s,"max_jobs":{"type":"integer","minimum":1,"maximum":100},"max_depth":{"type":"integer","minimum":0,"maximum":4},"domains":{"type":"array","items":s,"maxItems":30},"sites":{"type":"array","items":s,"maxItems":30},"web_search":{"type":"boolean"}}),
+            json!({"kind":{"enum":["username","profile","url","domain","search"]},"seed":s,"max_jobs":{"type":"integer","minimum":1,"maximum":100},"max_depth":{"type":"integer","minimum":0,"maximum":4},"domains":{"type":"array","items":s,"maxItems":30},"sites":{"type":"array","items":s,"maxItems":30},"web_search":{"type":"boolean"},"planner":{"enum":["local","nvidia"]},"reasoning_budget":{"type":"integer","minimum":1,"maximum":20}}),
             vec!["seed"],
         ),
         "discovery/run" => (json!({"id":identifier}), vec!["id"]),
+        "discovery/configure" => (
+            json!({"id":identifier,"planner":{"enum":["local","nvidia"]},"reasoning_budget":{"type":"integer","minimum":1,"maximum":20}}),
+            vec!["id", "planner", "reasoning_budget"],
+        ),
+        "nvidia/ask" => (
+            json!({"question":{"type":"string","minLength":1,"maxLength":4000}}),
+            vec!["question"],
+        ),
         _ => (json!({}), vec![]),
     };
     json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
@@ -216,6 +240,14 @@ pub fn apply(workbench: &Workbench, operation: &str, v: &Value) -> Result<Value>
             workbench.create_discovery(serde_json::from_value::<DiscoveryOptions>(v.clone())?)
         }
         "discovery/run" => workbench.run_discovery(text(v, "id"), &AtomicBool::new(false), |_| {}),
+        "discovery/configure" => workbench.configure_discovery_planner(
+            text(v, "id"),
+            text(v, "planner"),
+            v["reasoning_budget"].as_u64().unwrap_or(5) as usize,
+        ),
+        "nvidia/status" => workbench.nvidia_status(),
+        "nvidia/export" => workbench.export_nvidia_projection(),
+        "nvidia/ask" => workbench.nvidia_ask(text(v, "question"), &AtomicBool::new(false), |_| {}),
         "ontology/sync" => workbench.sync_ontology(),
         "claims/review" => {
             workbench.review_claim(text(v, "id"), text(v, "decision"), text(v, "note"))

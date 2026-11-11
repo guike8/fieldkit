@@ -1,0 +1,4 @@
+.env
+fieldkit.env
+data/
+.local/

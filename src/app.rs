@@ -399,7 +399,10 @@ impl Application {
             "Unknown application operation"
         );
         let payload = scoped_operation(&self.workspace, &self.model, operation, &payload)?;
-        if matches!(operation, "tools/run" | "flows/run" | "discovery/run") {
+        if matches!(
+            operation,
+            "tools/run" | "flows/run" | "discovery/run" | "nvidia/ask"
+        ) {
             return Ok(Reply::json(self.enqueue(operation, payload)?, 202));
         }
         let record = api::apply(&self.model, operation, &payload)?;

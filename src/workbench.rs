@@ -239,7 +239,7 @@ impl Workbench {
                 let hash = self.store.report_hash(run)?;
                 let body = serde_json::to_string_pretty(&report["data"])?;
                 let preview: String = body.chars().take(16000).collect();
-                evidence.push(json!({"id":ev,"title":format!("{} · {}",text(report,"command"),text(report,"target")),"kind":"collector","content":preview,"content_truncated":preview.len()<body.len(),"source_url":sources.first().map(|s|s["url"].clone()).unwrap_or(Value::Null),"collected_at":report["timing"]["completed_at"],"sha256":sources.first().and_then(|s|s["sha256"].as_str()).unwrap_or(&hash),"report_sha256":hash,"hash_scope":sources.first().and_then(|s|s["hash_scope"].as_str()).unwrap_or(if sources.first().is_some_and(|s|s["sha256"].is_string()) {"source_bytes"} else {"collector_report"}),"collector_status":report["status"],"status":"unreviewed","review_note":"","run_id":run,"source_ids":sources.iter().filter_map(|s|s["source_id"].as_str()).collect::<Vec<_>>(),"sources":sources,"source_count":sources.len(),"collection_method":"collector"}));
+                evidence.push(json!({"id":ev,"title":format!("{} · {}",text(report,"command"),text(report,"target")),"kind":if report["command"]=="analysis.nvidia"{"model_assessment"}else{"collector"},"content":preview,"content_truncated":preview.len()<body.len(),"source_url":sources.first().map(|s|s["url"].clone()).unwrap_or(Value::Null),"collected_at":report["timing"]["completed_at"],"sha256":sources.first().and_then(|s|s["sha256"].as_str()).unwrap_or(&hash),"report_sha256":hash,"hash_scope":sources.first().and_then(|s|s["hash_scope"].as_str()).unwrap_or(if sources.first().is_some_and(|s|s["sha256"].is_string()) {"source_bytes"} else {"collector_report"}),"collector_status":report["status"],"status":"unreviewed","review_note":"","run_id":run,"source_ids":sources.iter().filter_map(|s|s["source_id"].as_str()).collect::<Vec<_>>(),"sources":sources,"source_count":sources.len(),"collection_method":if report["command"]=="analysis.nvidia"{"model_assessment_not_independent_evidence"}else{"collector"}}));
             }
             let allowed_sources: BTreeSet<String> = report["sources"]
                 .as_array()
@@ -674,6 +674,8 @@ impl Workbench {
         state["discovery"] = json!(self.discoveries()?);
         state["frontier"] = json!(self.store.list("discovery_jobs")?);
         state["ontology"] = self.ontology_snapshot()?;
+        state["reasoning"] = json!(self.store.list("reasoning")?);
+        state["nvidia"] = crate::reasoning::summary();
         state["stats"] = json!({"evidence":state["evidence"].as_array().unwrap().len(),"entities":state["entities"].as_array().unwrap().len(),"links":state["links"].as_array().unwrap().len(),"correlations":correlations.len(),"flows":state["flows"].as_array().unwrap().len(),"notes":state["notes"].as_array().unwrap().len(),"candidate_leads":correlations.iter().filter(|c|c["status"]=="candidate").count(),"runs":state["summary"]["run_count"]});
         Ok(state)
     }
@@ -698,6 +700,7 @@ impl Workbench {
             "ontology",
             "discovery",
             "frontier",
+            "reasoning",
             "entities",
             "links",
             "flows",

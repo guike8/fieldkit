@@ -77,6 +77,10 @@ enum Command {
         sites: Vec<String>,
         #[arg(long)]
         web_search: bool,
+        #[arg(long,default_value="local",value_parser=["local","nvidia"])]
+        planner: String,
+        #[arg(long, default_value_t = 5)]
+        reasoning_budget: usize,
         #[arg(long)]
         resume: Option<String>,
         #[arg(long)]
@@ -87,8 +91,21 @@ enum Command {
         #[arg(long)]
         sync: bool,
     },
+    /// Connect NVIDIA Auto Ontology to an evidence projection and inspect its decisions.
+    Nvidia {
+        #[command(subcommand)]
+        action: NvidiaCommand,
+    },
     #[command(external_subcommand)]
     Collect(Vec<String>),
+}
+
+#[derive(Subcommand)]
+enum NvidiaCommand {
+    Status,
+    Export,
+    Ask { question: String },
+    Decisions,
 }
 
 fn input(file: &str) -> Result<String> {
@@ -291,6 +308,8 @@ fn run(cli: Cli) -> Result<i32> {
             domains,
             sites,
             web_search,
+            planner,
+            reasoning_budget,
             resume,
             plan_only,
         } => {
@@ -306,6 +325,8 @@ fn run(cli: Cli) -> Result<i32> {
                     domains,
                     sites,
                     web_search,
+                    planner,
+                    reasoning_budget,
                 })?
             };
             if plan_only {
@@ -326,6 +347,23 @@ fn run(cli: Cli) -> Result<i32> {
             } else {
                 w.ontology_snapshot()?
             })?;
+        }
+        Command::Nvidia { action } => {
+            let w = Workbench::new(default_case(), config)?;
+            match action {
+                NvidiaCommand::Status => {
+                    let status = w.nvidia_status()?;
+                    print(&status)?;
+                    return Ok(if status["ready"] == true { 0 } else { 2 });
+                }
+                NvidiaCommand::Export => print(&w.export_nvidia_projection()?)?,
+                NvidiaCommand::Ask { question } => {
+                    print(&w.nvidia_ask(&question, &AtomicBool::new(false), |v| eprintln!("{v}"))?)?
+                }
+                NvidiaCommand::Decisions => {
+                    print(&json!({"reasoning":w.store.list("reasoning")?}))?
+                }
+            }
         }
         Command::Collect(args) => {
             let job = collector_job(args)?;

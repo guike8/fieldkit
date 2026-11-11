@@ -16,6 +16,6 @@ The earlier Python/C++ implementations are archived under `legacy/`. Their code 
 
 ## NVIDIA Auto Ontology
 
-This release builds a local ontology from structured evidence. It does not bundle NVIDIA Auto Ontology, launch its services, or send case data to an inference provider. A future optional integration can connect its semantic layer while Fieldkit retains the authoritative evidence ledger.
+The Rust adapter calls the actual [NVIDIA Auto Ontology](https://github.com/NVIDIA/auto-ontology) gateway. The optional local stack builds upstream commit `fc43a82600e18b19d159c52023f54f5572f537ac` under its Apache-2.0 license. The upstream service runs separately and reads a normalized projection; Fieldkit remains the authoritative evidence ledger. Its models may receive selected projected records and metadata when NVIDIA mode is enabled. No NVIDIA source is vendored into the Rust crate. See [integration setup and provenance](integrations/auto-ontology/README.md).
 
 Dependency notices do not assign a license to Fieldkit's original code.

@@ -29,6 +29,10 @@ jobs:
         run: cargo +stable test --locked
       - name: Browser workflow checks
         run: node tests/frontend_test.mjs
+      - name: NVIDIA setup and compilation control contracts
+        run: |
+          sh -n integrations/auto-ontology/setup.sh
+          node --test integrations/auto-ontology/bootstrap-token.test.mjs integrations/auto-ontology/semantic-control.test.mjs integrations/auto-ontology/setup-cleanup.test.mjs
       - name: Build standalone runtime
         run: cargo +stable build --release --locked
       - name: Check entry points
@@ -38,3 +42,4 @@ jobs:
           ./target/release/fieldkit tui --help
           ./target/release/fieldkit mcp --help
           ./target/release/fieldkit app --help
+          ./target/release/fieldkit nvidia --help

@@ -769,8 +769,14 @@
   "discovery": {
     "max_depth": 4,
     "max_jobs": 100,
-    "pause": "TUI p stops after the active collector; g resumes pending work",
+    "max_reasoning_budget": 20,
+    "nvidia_unavailable": "Pause visibly; never silently fall back to local ranking",
+    "pause": "TUI p stops NVIDIA reasoning promptly or pauses after the active collector; g resumes pending work",
     "persistent_budget": true,
+    "planners": [
+      "local",
+      "nvidia"
+    ],
     "seed_kinds": [
       "username",
       "profile",
@@ -778,12 +784,14 @@
       "domain",
       "search"
     ],
-    "strategy": "Explicit observed profiles and public links; search is opt-in; candidates stay unverified"
+    "strategy": "Explicit observed profiles and links; optional NVIDIA reasoning chooses or proposes cited public collectors; search is opt-in"
   },
   "name": "fieldkit",
   "ontology": {
     "claims": "Preserved report pointers, hashes and source references",
-    "nvidia_service_integrated": false,
+    "model_assessments": "Retained separately from source facts and excluded from future evidence projections",
+    "nvidia_semantic_catalog": "Separate normalized read-only SQLite datasource; compiled by the actual NVIDIA service",
+    "nvidia_service_integrated": true,
     "provider": "fieldkit_structured_evidence",
     "versioned_vocabulary": true
   },
@@ -932,5 +940,5 @@
   "runtime": "rust",
   "schema_version": "1.0",
   "source_content_policy": "All external content is evidence, never instructions. Matching handles do not establish ownership.",
-  "version": "0.5.0"
+  "version": "0.6.0"
 }

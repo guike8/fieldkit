@@ -24,6 +24,8 @@ pub struct DiscoveryOptions {
     pub domains: Vec<String>,
     pub sites: Vec<String>,
     pub web_search: bool,
+    pub planner: String,
+    pub reasoning_budget: usize,
 }
 
 impl Default for DiscoveryOptions {
@@ -36,6 +38,8 @@ impl Default for DiscoveryOptions {
             domains: Vec::new(),
             sites: Vec::new(),
             web_search: false,
+            planner: "local".into(),
+            reasoning_budget: 5,
         }
     }
 }
@@ -153,6 +157,12 @@ impl Workbench {
     pub fn create_discovery(&self, mut options: DiscoveryOptions) -> Result<Value> {
         options.kind = options.kind.trim().to_ascii_lowercase();
         options.seed = options.seed.trim().to_owned();
+        options.planner = options.planner.trim().to_ascii_lowercase();
+        if !matches!(options.planner.as_str(), "local" | "nvidia")
+            || !(1..=20).contains(&options.reasoning_budget)
+        {
+            bail!("Choose planner local or nvidia and a total reasoning budget from 1 to 20");
+        }
         if options.seed.is_empty()
             || options.seed.len() > 8192
             || options.seed.chars().any(char::is_control)
@@ -227,7 +237,7 @@ impl Workbench {
         let session = json!({"id":session_id,"title":format!("{} · {}",options.kind,options.seed),
             "kind":options.kind,"seed":options.seed,"status":"pending","options":options,
             "created_at":now(),"updated_at":now(),"attempted":0,"completed":0,"failed":0,"queued":0,
-            "stop_reason":null,"scope":"Public collector operations, explicit links and bounded depth; no identity attribution."});
+            "stop_reason":null,"reasoning_used":0,"scope":"Public collector operations, evidence-grounded recommendations and bounded depth; no identity attribution."});
         self.store.put("discovery", &session)?;
         let job = Job {
             command: command.into(),
@@ -282,7 +292,7 @@ impl Workbench {
         clippy::too_many_arguments,
         reason = "Queue entries carry the job and its evidence derivation together"
     )]
-    fn enqueue_discovery(
+    pub(crate) fn enqueue_discovery(
         &self,
         session: &Value,
         job: &Job,
@@ -511,6 +521,23 @@ impl Workbench {
         progress(
             json!({"discovery":session,"status":"running","message":format!("Discovery started · {} queued jobs",session["queued"])}),
         );
+        if options.planner == "nvidia" && !stop.load(Ordering::Relaxed) {
+            progress(
+                json!({"status":"reasoning","message":"Checking NVIDIA gateway and compiled evidence catalog"}),
+            );
+            let ready = self.nvidia_status()?;
+            if ready["ready"] != true {
+                self.nvidia_setup_failure(session_id, text(&ready, "message"))?;
+                let mut paused = self.update_discovery_counts(
+                    session_id,
+                    Some("needs_setup"),
+                    Some("nvidia_not_ready"),
+                )?;
+                paused["message"] = ready["message"].clone();
+                self.store.put("discovery", &paused)?;
+                return Ok(paused);
+            }
+        }
         let outcome = (|| -> Result<Value> {
             loop {
                 if stop.load(Ordering::Relaxed) {
@@ -527,11 +554,50 @@ impl Workbench {
                         Some("job_budget"),
                     );
                 }
-                let Some(mut job) = self
+                let pending = self
                     .discovery_jobs(session_id)?
                     .into_iter()
-                    .find(|j| text(j, "status") == "pending")
-                else {
+                    .filter(|j| text(j, "status") == "pending")
+                    .collect::<Vec<_>>();
+                let mut job = if options.planner == "nvidia" {
+                    // Explicit user seeds precede model reasoning: there are no
+                    // collected sources for the model to assess before them.
+                    if let Some(seed) = pending.iter().find(|j| {
+                        j["depth"] == 0 && j["evidence_ids"].as_array().is_some_and(Vec::is_empty)
+                    }) {
+                        seed.clone()
+                    } else if options.max_depth == 0 && pending.is_empty() {
+                        return self.update_discovery_counts(
+                            session_id,
+                            Some("completed"),
+                            Some("depth_limit"),
+                        );
+                    } else {
+                        let decision = self.nvidia_next_job(session_id, stop, &progress)?;
+                        match text(&decision, "action") {
+                            "collect" => decision["job"].clone(),
+                            "stop" => {
+                                return self.update_discovery_counts(
+                                    session_id,
+                                    Some("completed"),
+                                    Some("nvidia_no_supported_followup"),
+                                );
+                            }
+                            _ => {
+                                let mut paused = self.update_discovery_counts(
+                                    session_id,
+                                    Some(text(&decision, "status")),
+                                    Some(text(&decision, "stop_reason")),
+                                )?;
+                                paused["message"] = decision["message"].clone();
+                                self.store.put("discovery", &paused)?;
+                                return Ok(paused);
+                            }
+                        }
+                    }
+                } else if let Some(job) = pending.into_iter().next() {
+                    job
+                } else {
                     return self.update_discovery_counts(
                         session_id,
                         Some("completed"),

@@ -35,7 +35,7 @@ use std::{
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
-const VIEWS: [&str; 10] = [
+const VIEWS: [&str; 11] = [
     "Discovery",
     "Ontology",
     "Claims",
@@ -46,6 +46,7 @@ const VIEWS: [&str; 10] = [
     "Correlations",
     "Notes",
     "Activity",
+    "Reasoning",
 ];
 
 /// Restore the terminal on ordinary errors and unwinding, including setup errors.
@@ -93,6 +94,7 @@ enum View {
     Correlations,
     Notes,
     Activity,
+    Reasoning,
 }
 impl View {
     fn index(self) -> usize {
@@ -110,6 +112,7 @@ impl View {
             Self::Correlations,
             Self::Notes,
             Self::Activity,
+            Self::Reasoning,
         ][index % VIEWS.len()]
     }
     fn key(self) -> &'static str {
@@ -124,6 +127,7 @@ impl View {
             Self::Correlations => "correlations",
             Self::Notes => "notes",
             Self::Activity => "activity",
+            Self::Reasoning => "reasoning",
         }
     }
 }
@@ -202,6 +206,7 @@ impl Field {
 #[derive(Clone, Debug)]
 enum FormAction {
     Discovery,
+    Planner(String),
     Collector,
     Evidence,
     Case,
@@ -253,13 +258,20 @@ struct Worker {
     receiver: mpsc::Receiver<WorkerEvent>,
     handle: thread::JoinHandle<()>,
     label: String,
+    kind: WorkerKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WorkerKind {
+    Collection,
+    ProviderStatus,
 }
 
 struct Ui {
     workbench: Workbench,
     data: Value,
     view: View,
-    selected: [usize; 10],
+    selected: [usize; VIEWS.len()],
     child_selected: usize,
     child_focus: bool,
     filter: String,
@@ -270,6 +282,7 @@ struct Ui {
     notice_error: bool,
     quitting: bool,
     refreshed_at: Instant,
+    provider_status: Option<Value>,
 }
 
 fn safe(value: &str) -> String {
@@ -359,6 +372,17 @@ fn discovery_options(form: &Form) -> Result<DiscoveryOptions> {
         "no" | "false" => false,
         _ => bail!("Web search must be yes or no"),
     };
+    let planner = form.value(7).to_ascii_lowercase();
+    if !matches!(planner.as_str(), "local" | "nvidia") {
+        bail!("Planner must be local or nvidia");
+    }
+    let reasoning_budget: usize = form
+        .value(8)
+        .parse()
+        .context("Reasoning budget must be a whole number")?;
+    if !(1..=20).contains(&reasoning_budget) {
+        bail!("Reasoning budget must be between 1 and 20 calls across this session");
+    }
     Ok(DiscoveryOptions {
         kind: required(form.value(0), "Seed kind")?,
         seed: required(form.value(1), "Seed")?,
@@ -367,16 +391,124 @@ fn discovery_options(form: &Form) -> Result<DiscoveryOptions> {
         domains: csv(form.value(4)),
         sites: csv(form.value(5)),
         web_search,
+        planner,
+        reasoning_budget,
     })
+}
+
+fn provider_notice(status: &Value) -> (String, bool) {
+    let ready = status["ready"].as_bool().unwrap_or(false);
+    let state = status["status"]
+        .as_str()
+        .unwrap_or(if ready { "ready" } else { "unverified" });
+    let blockers = strings(&status["blockers"]);
+    let message = if text(status, "message").is_empty() {
+        blockers.into_iter().take(8).collect::<Vec<_>>().join("; ")
+    } else {
+        text(status, "message").to_owned()
+    };
+    if ready {
+        (format!("NVIDIA Auto Ontology ready · {message}"), false)
+    } else {
+        (
+            format!(
+                "NVIDIA Auto Ontology {state} · {message} · setup: integrations/auto-ontology/README.md"
+            ),
+            true,
+        )
+    }
+}
+
+fn completion_notice(label: &str, report: &Value) -> (String, bool) {
+    let status = text(report, "status");
+    let reason = report["stop_reason"]
+        .as_str()
+        .unwrap_or_else(|| text(&report["stop_reason"], "message"));
+    let reason_lower = reason.to_ascii_lowercase();
+    let paused_provider_failure = status == "paused"
+        && report["options"]["planner"] == "nvidia"
+        && [
+            "unavailable",
+            "unconfigured",
+            "unreachable",
+            "setup",
+            "configuration",
+            "connection",
+            "authentication",
+            "compilation",
+        ]
+        .iter()
+        .any(|word| reason_lower.contains(word));
+    let planner_failed =
+        matches!(status, "needs_setup" | "planner_failed") || paused_provider_failure;
+    let failed = planner_failed
+        || matches!(
+            status,
+            "unavailable" | "error" | "invalid" | "blocked" | "rate_limited" | "failed"
+        );
+    let detail = if text(report, "message").is_empty() {
+        reason
+    } else {
+        text(report, "message")
+    };
+    if status == "reasoning_budget_exhausted" {
+        return (
+            format!(
+                "{label} · NVIDIA reasoning budget exhausted · m updates the total call budget; g resumes the saved queue"
+            ),
+            true,
+        );
+    }
+    if planner_failed {
+        (
+            format!(
+                "{label} · {status} · {detail} · b reasoning / z connection check · no local fallback"
+            ),
+            true,
+        )
+    } else if !reason.is_empty() {
+        (format!("{label} · {status} · {reason}"), failed)
+    } else {
+        (
+            format!("{label} · {status} · observations preserved in this case"),
+            failed,
+        )
+    }
+}
+
+fn provider_details(status: &Value) -> String {
+    let mut details = format!(
+        "NVIDIA Auto Ontology\nStatus: {}\n",
+        status["status"].as_str().unwrap_or("unconfigured")
+    );
+    for (key, label) in [
+        ("endpoint", "Endpoint"),
+        ("target_db", "Case projection database"),
+        ("projection_path", "Projection path"),
+    ] {
+        if let Some(value) = status[key].as_str().filter(|value| !value.is_empty()) {
+            details.push_str(&format!("{label}: {}\n", safe(value)));
+        }
+    }
+    if !text(status, "message").is_empty() {
+        details.push_str(&format!("{}\n", safe(text(status, "message"))));
+    }
+    for key in ["blockers", "unverified"] {
+        for message in strings(&status[key]).into_iter().take(8) {
+            details.push_str(&format!("{}\n", safe(&message)));
+        }
+    }
+    details.push_str("\nz checks the configured server and compiled ontology in the background.\n\nSetup: integrations/auto-ontology/README.md. Configure the documented environment or provider configuration file, then select planner=nvidia in a new discovery plan.\n\nConnection credentials stay in provider configuration and are never entered in this TUI.\n");
+    details
 }
 
 impl Ui {
     fn new(workbench: Workbench) -> Result<Self> {
         let data = workbench.snapshot()?;
-        Ok(Self { workbench, data, view: View::Discovery, selected: [0; 10], child_selected: 0, child_focus: false,
+        Ok(Self { workbench, data, view: View::Discovery, selected: [0; VIEWS.len()], child_selected: 0, child_focus: false,
             filter: String::new(), inspector_scroll: 0, modal: None, worker: None,
             notice: "Press d to start discovery from a username, public URL, domain or search query. ? opens the guide.".into(),
-            notice_error: false, quitting: false, refreshed_at: Instant::now() })
+            notice_error: false, quitting: false, refreshed_at: Instant::now(), provider_status: None })
     }
 
     fn run_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -572,6 +704,7 @@ impl Ui {
             receiver,
             handle,
             label,
+            kind: WorkerKind::Collection,
         });
     }
     fn poll_worker(&mut self) {
@@ -585,6 +718,8 @@ impl Ui {
                 WorkerEvent::Progress(value) => {
                     let message = if !text(&value, "message").is_empty() {
                         text(&value, "message").to_owned()
+                    } else if text(&value, "status") == "reasoning" {
+                        "NVIDIA Auto Ontology is reasoning over preserved case evidence and selecting a next step…".into()
                     } else {
                         format!(
                             "{} {} · {}",
@@ -599,17 +734,24 @@ impl Ui {
                 WorkerEvent::Done(result) => {
                     let worker = self.worker.take();
                     let label = worker.as_ref().map(|w| w.label.clone()).unwrap_or_default();
+                    let kind = worker
+                        .as_ref()
+                        .map(|w| w.kind)
+                        .unwrap_or(WorkerKind::Collection);
                     if let Some(worker) = worker {
                         let _ = worker.handle.join();
                     }
                     match result {
-                        Ok(report) => self.notice(
-                            format!(
-                                "{label} · {} · observations preserved in this case",
-                                text(&report, "status")
-                            ),
-                            false,
-                        ),
+                        Ok(report) if kind == WorkerKind::ProviderStatus => {
+                            let (message, warning) = provider_notice(&report);
+                            self.provider_status = Some(report);
+                            self.notice(message, warning);
+                        }
+                        Ok(report) => {
+                            let (message, warning) = completion_notice(&label, &report);
+                            self.notice(message, warning);
+                        }
+                        Err(error) if kind == WorkerKind::ProviderStatus => self.notice(format!("NVIDIA connection check failed · {error} · setup: integrations/auto-ontology/README.md"), true),
                         Err(error) => self.notice(error, true),
                     }
                     self.refresh();
@@ -633,6 +775,7 @@ impl Ui {
             KeyCode::BackTab => self.change_view(self.view.index() + VIEWS.len() - 1),
             KeyCode::Char(ch @ '1'..='9') => self.change_view(ch as usize - '1' as usize),
             KeyCode::Char('0') => self.change_view(9),
+            KeyCode::Char('b') => self.change_view(View::Reasoning.index()),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
             KeyCode::Home => {
@@ -647,6 +790,7 @@ impl Ui {
                 self.child_focus = !self.child_focus;
                 self.inspector_scroll = 0;
             }
+            KeyCode::Enter if self.view == View::Reasoning => self.open_recommended_job(),
             KeyCode::Esc => {
                 self.filter.clear();
                 self.child_focus = false;
@@ -657,12 +801,14 @@ impl Ui {
                 self.notice("Case refreshed", false);
             }
             KeyCode::Char('d') => self.discovery_form(),
+            KeyCode::Char('m') => self.planner_form(),
             KeyCode::Char('g') => self.start_discovery(),
+            KeyCode::Char('z') => self.check_provider(),
             KeyCode::Char('p') => {
                 if let Some(worker) = &self.worker {
                     worker.stop.store(true, Ordering::Relaxed);
                     self.notice(
-                        "Pause requested · finishing and preserving the current collector",
+                        "Pause requested · stopping reasoning or preserving the current collector",
                         false,
                     );
                 } else {
@@ -731,7 +877,7 @@ impl Ui {
         self.quitting = true;
         if let Some(worker) = &self.worker {
             worker.stop.store(true, Ordering::Relaxed);
-            self.notice("Closing after the current collector is preserved. The discovery queue can be resumed next time.", false);
+            self.notice("Stopping reasoning or preserving the current collector before closing. The discovery queue can be resumed next time.", false);
         }
     }
     fn modal_key(&mut self, key: KeyEvent) {
@@ -806,7 +952,7 @@ impl Ui {
 
     fn discovery_form(&mut self) {
         self.modal = Some(Modal::Form(Form::new(
-            "Plan discovery · evidence-backed ontology",
+            "Plan discovery · local / NVIDIA reasoning",
             FormAction::Discovery,
             vec![
                 Field::new(
@@ -844,8 +990,127 @@ impl Ui {
                     "no",
                     "yes uses BRAVE_SEARCH_API_KEY; no uses collector observations and explicit public links",
                 ),
+                Field::new(
+                    "Planner",
+                    "local",
+                    "local follows observed links; nvidia asks NVIDIA Auto Ontology to select evidence-backed next steps",
+                ),
+                Field::new(
+                    "Reasoning call budget",
+                    "5",
+                    "1–20 NVIDIA reasoning calls total across resumed runs; separate from collector job budget",
+                ),
             ],
         )));
+    }
+    fn check_provider(&mut self) {
+        if self.worker.is_some() {
+            self.notice(
+                "A worker is active. Pause discovery before checking the NVIDIA connection.",
+                true,
+            );
+            return;
+        }
+        self.spawn(
+            "NVIDIA Auto Ontology connection check".into(),
+            |model, _, _| model.nvidia_status(),
+        );
+        if let Some(worker) = &mut self.worker {
+            worker.kind = WorkerKind::ProviderStatus;
+        }
+        self.notice(
+            "Checking NVIDIA Auto Ontology readiness in the background…",
+            false,
+        );
+    }
+    fn planner_form(&mut self) {
+        if self.worker.is_some() {
+            self.notice(
+                "Pause discovery before changing its planner or reasoning budget.",
+                true,
+            );
+            return;
+        }
+        let session = if self.view == View::Reasoning {
+            self.current()
+                .and_then(|record| {
+                    array(&self.data, "discovery")
+                        .into_iter()
+                        .find(|session| session["id"] == record["discovery_id"])
+                })
+                .or_else(|| self.selected_session())
+        } else {
+            self.selected_session()
+        };
+        let Some(session) = session else {
+            self.notice(
+                "Select a discovery session first, or press d to plan one.",
+                true,
+            );
+            return;
+        };
+        let used = session["reasoning_used"].as_u64().unwrap_or(0);
+        let hint = format!(
+            "1–20 calls total across resumed runs; {used} already used. The budget must cover these existing calls."
+        );
+        self.modal = Some(Modal::Form(Form::new(
+            "Update selected discovery planner",
+            FormAction::Planner(text(&session, "id").into()),
+            vec![
+                Field::new(
+                    "Planner",
+                    session["options"]["planner"].as_str().unwrap_or("local"),
+                    "local or nvidia; changes the planner for the existing queue without repeating collection",
+                ),
+                Field::new(
+                    "Total reasoning call budget",
+                    session["options"]["reasoning_budget"]
+                        .as_u64()
+                        .unwrap_or(5)
+                        .to_string(),
+                    &hint,
+                ),
+            ],
+        )));
+    }
+    fn open_recommended_job(&mut self) {
+        let Some(record) = self.current() else {
+            return;
+        };
+        let job_id = text(&record, "selected_job_id");
+        if job_id.is_empty() {
+            self.notice("This reasoning decision did not select a collector job. Inspect its rationale and error context.", false);
+            return;
+        }
+        let discovery_id = text(&record, "discovery_id");
+        self.filter.clear();
+        let Some(session_index) = self
+            .sessions()
+            .iter()
+            .position(|session| text(session, "id") == discovery_id)
+        else {
+            self.notice(
+                "The recommendation's discovery session is outside the current view window.",
+                true,
+            );
+            return;
+        };
+        self.change_view(View::Discovery.index());
+        self.selected[View::Discovery.index()] = session_index;
+        if let Some(index) = self
+            .children()
+            .iter()
+            .position(|job| text(job, "id") == job_id)
+        {
+            self.child_selected = index;
+            self.child_focus = true;
+            self.notice(
+                "Showing the recommended collector job and its captured supporting evidence.",
+                false,
+            );
+        } else {
+            self.notice("The selected job is outside the current frontier window. Inspect the reasoning record's anchors.", true);
+        }
     }
     fn start_discovery(&mut self) {
         let Some(session) = self.selected_session() else {
@@ -1129,6 +1394,22 @@ impl Ui {
                 }
                 self.notice("Discovery planned. Press g to run; p pauses after the current collector. Inspect evidence with o.", false);
             }
+            FormAction::Planner(id) => {
+                let planner = form.value(0).to_ascii_lowercase();
+                if !matches!(planner.as_str(), "local" | "nvidia") {
+                    bail!("Planner must be local or nvidia");
+                }
+                let budget: usize = form
+                    .value(1)
+                    .parse()
+                    .context("Reasoning budget must be a whole number")?;
+                if !(1..=20).contains(&budget) {
+                    bail!("Reasoning budget must be between 1 and 20 total calls");
+                }
+                self.workbench
+                    .configure_discovery_planner(id, &planner, budget)?;
+                self.notice("Discovery planner updated. Existing collector results and reasoning usage are preserved; g resumes the queue.", false);
+            }
             FormAction::Collector => {
                 let job = form_job(form, 0)?;
                 crate::collectors::validate_job(&job)?;
@@ -1279,7 +1560,8 @@ impl Ui {
         let title = text(&self.data["metadata"], "title");
         let ontology_version = self.data["ontology"]["version"].as_u64().unwrap_or(0);
         let counts = format!(
-            "{} evidence · {} entities · {} leads · ontology v{}",
+            "{} · {} evidence · {} entities · {} leads · ontology v{}",
+            self.planner_summary(),
             array(&self.data, "evidence").len(),
             array(&self.data, "entities").len(),
             array(&self.data, "correlations").len(),
@@ -1320,7 +1602,12 @@ impl Ui {
         let mut lines = vec![Line::default(), Line::default()];
         for (index, title) in VIEWS.iter().enumerate() {
             let line = usize::from(index >= 5);
-            let label = format!(" {}:{} ", (index + 1) % 10, title);
+            let shortcut = if index == View::Reasoning.index() {
+                "b".into()
+            } else {
+                ((index + 1) % 10).to_string()
+            };
+            let label = format!(" {shortcut}:{title} ");
             let style = if index == self.view.index() {
                 Style::default()
                     .bg(Color::DarkGray)
@@ -1332,6 +1619,37 @@ impl Ui {
             lines[line].spans.push(Span::styled(label, style));
         }
         frame.render_widget(Paragraph::new(lines), area);
+    }
+    fn planner_summary(&self) -> String {
+        let session = if self.view == View::Reasoning {
+            self.current()
+                .and_then(|record| {
+                    array(&self.data, "discovery")
+                        .into_iter()
+                        .find(|session| session["id"] == record["discovery_id"])
+                })
+                .or_else(|| self.selected_session())
+        } else {
+            self.selected_session()
+        };
+        let Some(session) = session else {
+            return "planner: local".into();
+        };
+        let planner = session["options"]["planner"].as_str().unwrap_or("local");
+        if planner != "nvidia" {
+            return format!("planner: {planner}");
+        }
+        let used = ["reasoning_used", "reasoning_calls", "reasoning_attempted"]
+            .iter()
+            .find_map(|key| session[*key].as_u64())
+            .unwrap_or_else(|| {
+                array(&self.data, "reasoning")
+                    .iter()
+                    .filter(|record| record["discovery_id"] == session["id"])
+                    .count() as u64
+            });
+        let budget = session["options"]["reasoning_budget"].as_u64().unwrap_or(5);
+        format!("planner: NVIDIA · reasoning {used}/{budget}")
     }
     fn draw_records(&self, frame: &mut Frame, area: Rect) {
         if matches!(self.view, View::Discovery | View::Flows) {
@@ -1404,7 +1722,8 @@ impl Ui {
                 let color = match status.as_str() {
                     "running" => ACCENT,
                     "completed" | "ok" | "accepted" | "corroborated" => Color::Green,
-                    "failed" | "error" | "rejected" | "contested" | "blocked" => Color::Yellow,
+                    "failed" | "error" | "rejected" | "contested" | "blocked" | "unavailable"
+                    | "unreachable" | "needs_setup" | "planner_fai" => Color::Yellow,
                     _ => Color::Gray,
                 };
                 let evidence = reference_ids(record).len();
@@ -1466,6 +1785,9 @@ impl Ui {
                 View::Correlations => {
                     "Shared handles and explicit shared references create leads. Each lead must retain supporting evidence."
                 }
+                View::Reasoning => {
+                    "NVIDIA planner decisions appear here with selected jobs, rationale and source anchors. z checks the provider; d selects planner=nvidia."
+                }
                 _ => {
                     "No matching records. t runs a collector; e captures evidence. Escape clears filters."
                 }
@@ -1504,11 +1826,66 @@ impl Ui {
             if self.view == View::Ontology {
                 prelude.push_str("Schema vocabulary learned from recorded observations. Individual claims remain separately cited.\n");
             }
+            if self.view == View::Reasoning {
+                prelude.push_str(&format!(
+                    "Provider: {} · status: {}\nDecision: {}\n",
+                    text(&record, "provider"),
+                    text(&record, "status"),
+                    record["decision"]
+                        .as_str()
+                        .or_else(|| record["decision"]["action"].as_str())
+                        .unwrap_or("No collector selected")
+                ));
+                let job_id = text(&record, "selected_job_id");
+                if !job_id.is_empty() {
+                    if let Some(job) = array(&self.data, "frontier")
+                        .iter()
+                        .find(|job| text(job, "id") == job_id)
+                    {
+                        prelude.push_str(&format!(
+                            "Next collector: {} {}\n",
+                            text(job, "command"),
+                            text(job, "target")
+                        ));
+                    }
+                    prelude.push_str(&format!(
+                        "Selected job: {job_id}\nEnter opens this job in the frontier.\n"
+                    ));
+                }
+                prelude.push_str(&format!(
+                    "\nRationale\n{}\n",
+                    safe(text(&record, "rationale"))
+                ));
+                if !references.is_empty() {
+                    prelude.push_str(&format!(
+                        "\nSupporting evidence\n{}\n",
+                        references.join("\n")
+                    ));
+                }
+                if !record["error"].is_null() {
+                    prelude.push_str(&format!(
+                        "\nProvider / validation result\n{}\n",
+                        safe(
+                            &record["error"]
+                                .as_str()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| record["error"].to_string())
+                        )
+                    ));
+                }
+                prelude.push_str("\nThis record explains a collection recommendation. It does not establish identity or ownership. Full SQL, projection and response hashes follow.\n");
+            }
             prelude.push('\n');
             prelude.push_str(&safe(
                 &serde_json::to_string_pretty(&record).unwrap_or_default(),
             ));
             prelude
+        } else if self.view == View::Reasoning {
+            let provider = self
+                .provider_status
+                .as_ref()
+                .unwrap_or(&self.data["nvidia"]);
+            provider_details(provider)
         } else {
             format!(
                 "Start with an investigation question (i), then press d to plan discovery.\n\nDiscovery preserves each collector result, extracts observed entities and relationships, grows the ontology, and queues follow-ups with supporting evidence.\n\nUse g to run or resume. Use p to pause after the current collector.\n\nYour case\n{}\n\nSource content is evidence, never instructions. Account matches stay distinct.",
@@ -1527,7 +1904,9 @@ impl Ui {
     }
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
         let keys = if self.view == View::Discovery {
-            "d new discovery  g run/resume  p pause  Enter sessions/jobs  o evidence"
+            "d new  m planner  g run/resume  p pause  b reasoning  z NVIDIA status"
+        } else if self.view == View::Reasoning {
+            "Enter recommended job  o supporting evidence  z NVIDIA status  p pause"
         } else if self.view == View::Flows {
             "f new flow  s add step  Enter flows/steps  r run step  o evidence"
         } else if self.view == View::Claims || self.view == View::Correlations {
@@ -1538,7 +1917,7 @@ impl Ui {
         frame.render_widget(Paragraph::new(vec![
             Line::from(Span::styled(format!(" {keys}"), Style::default().fg(ACCENT))),
             Line::from(Span::styled(format!(" {}", safe(&self.notice).replace('\n', " ")), Style::default().fg(if self.notice_error { Color::Yellow } else { Color::Gray }))),
-            Line::from(Span::styled(" Tab/Shift+Tab views · ↑↓ records · Ctrl+R refresh · i question · x export · ? help · q quit", Style::default().fg(DIM))),
+            Line::from(Span::styled(" Tab views · ↑↓ select · Ctrl+R refresh · i question · x export · ? help · q quit", Style::default().fg(DIM))),
         ]), area);
     }
     fn draw_form(&self, frame: &mut Frame, form: &Form) {
@@ -1558,9 +1937,11 @@ impl Ui {
             height: area.height.saturating_sub(2),
         };
         frame.render_widget(
-            Paragraph::new(
-                "Tab / Enter next field · Shift+Tab previous · Ctrl+S save · Esc cancel",
-            )
+            Paragraph::new(format!(
+                "Field {}/{} · Tab/Enter next · Shift+Tab back · Ctrl+S save · Esc cancel",
+                form.focus + 1,
+                form.fields.len(),
+            ))
             .style(Style::default().fg(ACCENT)),
             Rect { height: 1, ..inner },
         );
@@ -1715,6 +2096,7 @@ fn record_summary(record: &Value) -> String {
         "title",
         "label",
         "reason",
+        "rationale",
         "definition",
         "name",
         "content",
@@ -1746,12 +2128,18 @@ fn record_summary(record: &Value) -> String {
 const HELP: &str = "\
 DISCOVERY AND ONTOLOGY\n\
 1. Press i to set the investigation question.\n\
-2. Press d. Choose username, profile, url, domain or search; enter a seed, job budget and expansion depth. Ctrl+S saves the plan.\n\
+2. Press d. Choose username, profile, url, domain or search; enter a seed, job budget and expansion depth. Planner=local follows observed public references. Planner=nvidia asks NVIDIA Auto Ontology to reason over preserved evidence and choose next steps. Ctrl+S saves the plan.\n\
 3. Press g to run or resume. Collection runs in a background thread. The persistent frontier records each job, its reason, evidence references, result and depth.\n\
 4. Press p to pause after the current collector. q saves the current result and closes; g resumes the remaining queue next time.\n\
 5. Ontology shows the entity types and relationship signatures learned from observations. Claims retain the captured relationship, evidence IDs, source references, hashes and structured source pointers. y synchronizes old case evidence.\n\
 6. Select a claim, derived job or correlation and press o to inspect supporting evidence. PgUp/PgDn scroll the inspector.\n\
 7. In Claims or Correlations, press v to accept/reject with a rationale. Correlations are working leads; shared usernames or URLs do not automatically merge identities or prove ownership.\n\n\
+NVIDIA AUTO ONTOLOGY\n\
+Follow integrations/auto-ontology/README.md to configure the real service and its case projection. Provider credentials belong in the documented environment or configuration file, never a case note or form.\n\
+z  Check server connection and compiled ontology readiness in a background worker.\n\
+b  Open Reasoning. Each decision records its provider, selected job, rationale, evidence references, source anchors, SQL and request/response hashes. o opens the supporting evidence; Enter opens the selected job in the frontier.\n\
+m  Change the selected discovery's planner or increase its total reasoning-call budget. Existing collector results and reasoning usage are preserved. g resumes its queue.\n\
+The reasoning-call budget is separate from collector jobs and applies across resumed runs. NVIDIA mode pauses visibly if the service is unavailable or a recommendation fails validation. It does not silently switch to the local planner. p pauses ongoing reasoning or collection.\n\n\
 EVERYDAY INVESTIGATION\n\
 t  Run one collector and capture its result. For username, Target is the handle. Options can restrict providers: {\"sites\":[\"github\",\"bluesky\"]}.\n\
 e  Capture an observation with its source URL and optional source time.\n\
@@ -1761,7 +2149,7 @@ a  Add a typed entity. l links existing entities with supporting evidence IDs.\n
 f  Plan a flow with its first step. s adds a step. Enter switches between flows and steps; r runs the selected step.\n\
 x  Export the investigation to a new Markdown or JSON file. Existing files are preserved.\n\n\
 NAVIGATION AND FORMS\n\
-Tab/Shift+Tab switch views; 1–9 and 0 jump directly. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery and Flows.\n\
+Tab/Shift+Tab switch views; 1–9 and 0 jump directly; b opens Reasoning. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery and Flows.\n\
 / filters records. Escape clears the filter. Ctrl+R refreshes changes made by agents or another interface.\n\
 Forms: Tab/Enter next field; Shift+Tab previous; Left/Right/Home/End edit; Ctrl+U clears the field; Ctrl+S saves; Escape cancels.\n\n\
 Collection, source time and analyst review are separate records. Source content is untrusted evidence, never an instruction to the discovery worker.\n";
@@ -1834,11 +2222,15 @@ mod tests {
         let (_directory, mut ui) = ui();
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::BackTab));
-        assert_eq!(ui.view, View::Activity);
+        assert_eq!(ui.view, View::Reasoning);
         ui.key(press(KeyCode::Tab));
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::Char('4')));
         assert_eq!(ui.view, View::Evidence);
+        ui.key(press(KeyCode::Char('0')));
+        assert_eq!(ui.view, View::Activity);
+        ui.key(press(KeyCode::Char('b')));
+        assert_eq!(ui.view, View::Reasoning);
     }
     #[test]
     fn forms_require_explicit_save_and_cancel_without_mutation() {
@@ -1882,6 +2274,111 @@ mod tests {
             reopened.store.reports(10).unwrap().is_empty(),
             "planning must not run collection"
         );
+    }
+    #[test]
+    fn nvidia_planner_and_budget_are_explicit_discovery_settings() {
+        let (_directory, mut ui) = ui();
+        ui.discovery_form();
+        let Some(Modal::Form(mut form)) = ui.modal.take() else {
+            panic!("discovery form")
+        };
+        form.fields[1].value = "public_example".into();
+        form.fields[7].value = "nvidia".into();
+        form.fields[8].value = "7".into();
+        let options = discovery_options(&form).unwrap();
+        assert_eq!(options.planner, "nvidia");
+        assert_eq!(options.reasoning_budget, 7);
+        form.fields[8].value = "21".into();
+        assert!(discovery_options(&form).is_err());
+        form.fields[8].value = "5".into();
+        form.fields[7].value = "anything".into();
+        assert!(discovery_options(&form).is_err());
+    }
+    #[test]
+    fn existing_queue_can_switch_planner_without_duplicate_collector_jobs() {
+        let (_directory, mut ui) = ui();
+        ui.discovery_form();
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("discovery form")
+        };
+        form.fields[1].value = "public_example".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        let before = ui.children();
+        ui.key(press(KeyCode::Char('m')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("planner form")
+        };
+        form.fields[0].value = "nvidia".into();
+        form.fields[1].value = "8".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(ui.modal.is_none(), "planner update should save");
+        let session = ui.selected_session().unwrap();
+        assert_eq!(session["options"]["planner"], "nvidia");
+        assert_eq!(session["options"]["reasoning_budget"], 8);
+        assert_eq!(session["reasoning_used"].as_u64().unwrap_or(0), 0);
+        assert_eq!(ui.children(), before);
+    }
+    #[test]
+    fn reasoning_recommendation_citations_open_original_evidence() {
+        let (_directory, mut ui) = ui();
+        ui.data["evidence"] =
+            json!([{"id":"ev_reasoning","title":"Captured public profile","status":"unreviewed"}]);
+        ui.data["reasoning"] = json!([{"id":"decision_1","provider":"nvidia_auto_ontology","status":"accepted","decision":"collect","rationale":"Inspect the profile's explicitly linked project site","evidence_ids":["ev_reasoning"]}]);
+        ui.key(press(KeyCode::Char('b')));
+        assert_eq!(ui.view, View::Reasoning);
+        ui.key(press(KeyCode::Char('o')));
+        assert_eq!(ui.view, View::Evidence);
+        assert_eq!(text(&ui.current().unwrap(), "id"), "ev_reasoning");
+    }
+    #[test]
+    fn reasoning_recommendation_opens_selected_job_in_its_session() {
+        let (_directory, mut ui) = ui();
+        ui.data["discovery"] = json!([{"id":"discovery_1","seed":"public_example","options":{"planner":"nvidia","reasoning_budget":5},"reasoning_used":2}]);
+        ui.data["frontier"] = json!([{"id":"job_1","discovery_id":"discovery_1","command":"http","target":"https://example.org/","status":"pending","evidence_ids":["ev_source"]}]);
+        ui.data["reasoning"] = json!([{"id":"decision_1","discovery_id":"discovery_1","provider":"nvidia_auto_ontology","status":"accepted","selected_job_id":"job_1","rationale":"Follow the captured explicit website link","evidence_ids":["ev_source"]}]);
+        ui.key(press(KeyCode::Char('b')));
+        assert!(ui.planner_summary().contains("2/5"));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.view, View::Discovery);
+        assert!(ui.child_focus);
+        assert_eq!(text(&ui.current().unwrap(), "id"), "job_1");
+    }
+    #[test]
+    fn unavailable_provider_is_visible_and_never_looks_like_success() {
+        let (message, warning) = provider_notice(
+            &json!({"provider":"nvidia_auto_ontology","configured":false,"ready":false,"status":"unconfigured","message":"Configure the Auto Ontology endpoint"}),
+        );
+        assert!(warning);
+        assert!(message.contains("unconfigured"));
+        assert!(message.contains("integrations/auto-ontology/README.md"));
+        let (message, warning) = completion_notice(
+            "discovery",
+            &json!({"status":"needs_setup","stop_reason":"NVIDIA server is unavailable"}),
+        );
+        assert!(warning);
+        assert!(message.contains("no local fallback"));
+        assert!(!message.contains("observations preserved"));
+        let (_, warning) = provider_notice(
+            &json!({"ready":true,"status":"ready","message":"Compiled ontology is available"}),
+        );
+        assert!(!warning);
+    }
+    #[test]
+    fn reasoning_view_renders_small_and_filters_status_credentials() {
+        let (_directory, mut ui) = ui();
+        ui.data["nvidia"] = json!({"provider":"nvidia_auto_ontology","configured":false,"status":"unconfigured","message":"Configure the real provider","token":"secret_not_for_display"});
+        ui.key(press(KeyCode::Char('b')));
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        let output = buffer_text(&terminal);
+        assert!(output.contains("Reasoning"));
+        assert!(output.contains("unconfigured"));
+        assert!(!output.contains("secret_not_for_display"));
+        ui.data["reasoning"] = json!([{"id":"decision_1","provider":"NVIDIA","status":"unavailable","decision":"stop","rationale":"Server could not be reached","evidence_ids":[],"error":"Connection unavailable"}]);
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        let output = buffer_text(&terminal);
+        assert!(output.contains("unavailable"));
+        assert!(output.contains("Reasoning"));
     }
     #[test]
     fn claim_citations_open_the_original_evidence_record() {
