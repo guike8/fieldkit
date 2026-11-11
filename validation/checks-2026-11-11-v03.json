@@ -1,0 +1,96 @@
+{
+  "tool": "fieldkit",
+  "version": "0.3.0",
+  "python_tests": {
+    "passed": 233,
+    "failed": 0,
+    "skipped": 0
+  },
+  "mcp_sdk": "2.3.0",
+  "beautifulsoup4": "4.15.0",
+  "mcp_tool_count": {
+    "default": 22,
+    "with_fixed_case": 24
+  },
+  "transports_verified": [
+    "stdio modern",
+    "stdio legacy",
+    "loopback Streamable HTTP"
+  ],
+  "live_mcp_checks": [
+    {
+      "tool": "fieldkit_telegram_profile",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 1,
+      "run_id": "run_e5b24378565c4715b5c98fa678369cc7",
+      "started_at": "2026-11-11T08:11:48.210Z",
+      "error_codes": []
+    },
+    {
+      "tool": "fieldkit_telegram_messages",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 1,
+      "run_id": "run_75641180a2ee4968b9df562d81617ceb",
+      "started_at": "2026-11-11T08:11:48.769Z",
+      "error_codes": []
+    },
+    {
+      "tool": "fieldkit_telegram_post",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 1,
+      "run_id": "run_a65b535cd0a34747883cea5ab04ea67f",
+      "started_at": "2026-11-11T08:11:49.606Z",
+      "error_codes": []
+    },
+    {
+      "tool": "fieldkit_bellingcat_telegram",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 1,
+      "run_id": "run_dac068b2c3254becae6a1a2308489d42",
+      "started_at": "2026-11-11T08:11:50.141Z",
+      "error_codes": [],
+      "extractor_invoked": true,
+      "media_references": 1,
+      "upstream": {
+        "project": "Bellingcat Auto Archiver",
+        "version": "1.3.1",
+        "license": "MIT",
+        "commit": "0507bf21793c2d3621a31295a7e166c8bfcec3e4",
+        "source_url": "https://github.com/bellingcat/auto-archiver/blob/0507bf21793c2d3621a31295a7e166c8bfcec3e4/src/auto_archiver/modules/telegram_extractor/telegram_extractor.py",
+        "original_sha256": "9399a4d2f3715c50ccebd2c19b138ceeb27c29b48df28d6e20edee57d93ae280",
+        "integration": "adapted_pinned_extractor",
+        "full_application": false
+      }
+    },
+    {
+      "tool": "fieldkit_telegram_export",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 1,
+      "run_id": "run_ab1867ccd9a2454fa38cf6dea4002d6e",
+      "started_at": "2026-11-11T08:11:50.699Z",
+      "error_codes": []
+    },
+    {
+      "tool": "fieldkit_case_verify",
+      "status": "ok",
+      "mcp_is_error": false,
+      "source_count": 0,
+      "run_id": "run_1a3134006792404ab1b3c85cc158c601",
+      "started_at": "2026-11-11T08:11:50.705Z",
+      "error_codes": [],
+      "integrity_summary": {
+        "ok": true,
+        "reports_checked": 5,
+        "artifacts_checked": 4,
+        "source_refs_checked": 4
+      }
+    }
+  ],
+  "media_capture": "Verified with bounded binary fixtures; live check extracted references only",
+  "scope": "Official public Telegram channel and synthetic local export only. Full post bodies and raw development-case evidence not redistributed."
+}

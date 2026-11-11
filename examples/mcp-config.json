@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "fieldkit": {
+      "command": "/absolute/path/to/fieldkit/.venv/bin/fieldkit-mcp",
+      "args": [
+        "--workspace",
+        "/absolute/path/to/investigations",
+        "--case",
+        "/absolute/path/to/investigations/cases/default"
+      ]
+    }
+  }
+}

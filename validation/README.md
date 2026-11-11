@@ -1,5 +1,15 @@
 # Validation — November 11, 2026
 
+## Version 0.3.0: MCP and Telegram
+
+The extended suite passed **233 tests with no failures or skips**, including real official-SDK modern/legacy stdio clients and a loopback Streamable HTTP client. The installable package exposes 22 MCP tools, or 24 when fixed-case tools are configured.
+
+Six end-to-end MCP calls passed: Telegram profile, bounded channel messages, exact post, the actual adapted Bellingcat extractor, a synthetic local Desktop export, and case verification. Bellingcat's pinned parser extracted one media reference from the official Telegram post. Explicit media-body capture was tested with bounded binary fixtures. The development case verified five reports and four captured artifacts.
+
+See [the v0.3 check summary](checks-2026-11-11-v03.json). Optional integration versions were MCP SDK 2.3.0 and Beautiful Soup 4.15.0. These tests require no Telegram login or API credentials.
+
+## Initial CLI validation
+
 The Python suite passed **177 offline tests**, covering provider fixtures, negative controls, transport limits, profile routing, strict JSON jobs, batch behavior, output protection, file extraction, and case integrity.
 
 An end-to-end batch ran 15 public-fixture jobs:

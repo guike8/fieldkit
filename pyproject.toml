@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fieldkit-osint"
+dynamic = ["version"]
+description = "Agent-oriented public-source OSINT CLI and MCP server with evidence workspaces"
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["osint", "mcp", "telegram", "investigation", "evidence"]
+dependencies = []
+license-files = ["native/handlecheck/third_party/nlohmann/LICENSE.MIT", "third_party/bellingcat/LICENSE"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.3,<3"]
+telegram = ["beautifulsoup4>=4.12,<5"]
+dev = ["build>=1.2,<2"]
+
+[project.scripts]
+fieldkit = "fieldkit_core.cli:main"
+fieldkit-mcp = "fieldkit_core.mcp_server:main"
+
+[project.urls]
+Repository = "https://github.com/guike8/fieldkit"
+Issues = "https://github.com/guike8/fieldkit/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "fieldkit_core.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["fieldkit_core*"]
+exclude = ["tests*", "native*", "work*"]
+
+[tool.setuptools.data-files]
+"share/fieldkit/native/handlecheck" = [
+  "native/handlecheck/handlecheck",
+  "native/handlecheck/Makefile",
+  "native/handlecheck/README.md",
+  "native/handlecheck/THIRD_PARTY.md",
+]
+"share/fieldkit/native/handlecheck/include" = ["native/handlecheck/include/*.hpp"]
+"share/fieldkit/native/handlecheck/src" = ["native/handlecheck/src/*.cpp"]
+"share/fieldkit/native/handlecheck/tests" = [
+  "native/handlecheck/tests/*.cpp",
+  "native/handlecheck/tests/*.py",
+]
+"share/fieldkit/native/handlecheck/third_party/nlohmann" = [
+  "native/handlecheck/third_party/nlohmann/json.hpp",
+  "native/handlecheck/third_party/nlohmann/LICENSE.MIT",
+]
+"share/fieldkit" = ["README.md", "AGENT_USAGE.md", "MCP.md", "THIRD_PARTY.md"]
+"share/fieldkit/examples" = ["examples/*.json", "examples/*.jsonl"]
+"share/fieldkit/third_party/bellingcat" = ["third_party/bellingcat/LICENSE", "third_party/bellingcat/VENDOR.md"]
+"share/fieldkit/validation" = ["validation/*.md", "validation/*.json"]

@@ -32,13 +32,29 @@ COMMANDS = {
     "archive": {"description": "Bounded Internet Archive CDX index observations; no replay crawling", "options": {
         "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "prefix": {"type": "boolean", "default": False}}},
     "email": {"description": "Email syntax and domain MX/SPF/DMARC; does not probe mailbox existence", "options": {}},
-    "file": {"description": "Local regular-file hashes, size, format signatures and image dimensions", "options": {}},
-    "extract": {"description": "Extract unverified indicators from a local UTF-8 evidence file with offsets", "options": {
+    "file": {"description": "Local regular-file hashes, size, format signatures and image dimensions", "local_target": True, "options": {}},
+    "extract": {"description": "Extract unverified indicators from a local UTF-8 evidence file with offsets", "local_target": True, "options": {
         "kinds": array({"type": "string", "enum": ["url", "email", "domain", "ipv4", "ipv6"]})}},
     "domain": {"description": "Compose supporting domain modules with individually reported failures", "options": {
         "modules": array({"type": "string", "enum": ["dns", "rdap", "ct", "tls", "http"]}, default=["dns", "rdap"]) }},
     "doctor": {"description": "Check runtime, native backend, and optional key availability without network requests",
                "target_required": False, "options": {}},
+    "integrations": {"description": "Describe installed optional integrations, upstream provenance, and supported operations",
+                     "target_required": False, "options": {}},
+    "telegram-profile": {"description": "Public Telegram profile/channel metadata from an exact handle or t.me URL", "options": {}},
+    "telegram-messages": {"description": "One bounded public Telegram channel preview page with message provenance",
+                          "options": {"limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+                                      "before": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+                                      "query": string(maxLength=200)}},
+    "telegram-post": {"description": "Inspect a single public Telegram post URL without logging in", "options": {}},
+    "telegram-export": {"description": "Analyze a local Telegram Desktop JSON export; records never leave the local process",
+                        "local_target": True, "options": {
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
+                            "query": string(maxLength=200)}},
+    "bellingcat-telegram": {"description": "Bellingcat Auto Archiver Telegram extractor, pinned MIT adaptation with bounded public I/O",
+                           "integration": "bellingcat_auto_archiver", "options": {
+                               "download_media": {"type": "boolean", "default": False},
+                               "max_media": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3}}},
 }
 
 STATUSES = ["ok", "partial", "not_found", "blocked", "rate_limited", "unknown", "unavailable", "invalid", "error"]

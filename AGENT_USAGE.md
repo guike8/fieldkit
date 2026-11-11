@@ -2,6 +2,8 @@
 
 Fieldkit is non-interactive. Normal commands write one JSON envelope to stdout and expose explicit statuses. Invoke it with an argument array; never interpolate an investigation target into a shell command. Global options work before or after the command. Successful `case export` intentionally writes the chosen export format directly, unless `--output` saves the export and returns a JSON receipt.
 
+MCP clients can use the same command layer through individually named tools. Install `.[mcp,telegram]`, configure `fieldkit-mcp` with an explicit workspace, and discover schemas through MCP `tools/list`. See [MCP.md](MCP.md) and [examples/mcp-config.json](examples/mcp-config.json). No local client configuration is modified automatically.
+
 ## Discover first
 
 ```sh
@@ -12,6 +14,8 @@ The manifest describes command names, arguments, options, and JSON schemas. Use 
 
 The manifest is under the envelope's `data` field. `./fieldkit schema username` returns the input schema for one command.
 
+`fieldkit integrations` reports upstream integration versions and optional dependency availability. Telegram helpers and the adapted Bellingcat extractor have separate entries, so an agent can preserve correct attribution.
+
 ## Execute a job
 
 A job contains a command, target, and command-specific options:
@@ -19,6 +23,18 @@ A job contains a command, target, and command-specific options:
 ```json
 {"command":"username","target":"octocat","options":{"sites":["github"]}}
 ```
+
+Telegram examples use the same job contract:
+
+```json
+{"command":"telegram-messages","target":"telegram","options":{"limit":10,"query":"update"}}
+```
+
+```json
+{"command":"bellingcat-telegram","target":"https://t.me/telegram/1","options":{"download_media":false,"max_media":3}}
+```
+
+The corresponding MCP tool calls are `fieldkit_telegram_messages` and `fieldkit_bellingcat_telegram`, with `target` and command options flattened into the arguments object. The Bellingcat tool uses the pinned, adapted MIT-licensed Auto Archiver TelegramExtractor; native Telegram helpers are separate Fieldkit code. An optional dependency missing at runtime returns `unavailable`.
 
 Pass one job to `run` or newline-delimited jobs to `batch`. A filename of `-` reads stdin.
 
@@ -81,6 +97,8 @@ Case JSONL export is not the batch-output protocol: its first line has `record_t
 Hash scope matters. Native username sources capture the Handlecheck engine JSON, **not upstream HTTP bodies**. Python HTTP sources capture bounded response bytes. Local files are cited by metadata/hash and are not copied into the case or reread during case verification.
 
 Local `file` and `extract` commands cite the file hash. Extraction positions are zero-based Unicode code-point offsets in UTF-8-sig decoded text, with an exclusive end; line and column are one-based. Source files are not sent to remote services by these commands.
+
+`telegram-export` also reads a supplied local JSON file. In MCP mode, the server confines all local-file and export targets to `--workspace`, and case writes use only its configured `--case`. Tool calls cannot select arbitrary output paths. Public Telegram media references are returned without downloading media bodies by default; `bellingcat-telegram` requires `download_media:true` for bounded media capture.
 
 ## Handle limits and unavailable providers
 

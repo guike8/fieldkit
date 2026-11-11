@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import threading
 from urllib.parse import quote, urlsplit, parse_qs
 
@@ -13,7 +14,8 @@ from .common import Failure, result, web_url
 
 NATIVE = {"github": "GitHub", "gitlab": "GitLab", "codeberg": "Codeberg", "devto": "DEV",
           "lichess": "Lichess", "chess": "Chess.com", "huggingface": "Hugging Face", "hackernews": "Hacker News"}
-BACKEND = Path(__file__).resolve().parent.parent / "native" / "handlecheck" / "handlecheck"
+_CHECKOUT_BACKEND = Path(__file__).resolve().parent.parent / "native" / "handlecheck" / "handlecheck"
+BACKEND = _CHECKOUT_BACKEND if _CHECKOUT_BACKEND.is_file() else Path(sys.prefix) / "share" / "fieldkit" / "native" / "handlecheck" / "handlecheck"
 _NATIVE_LOCK = threading.Lock()
 NATIVE_URLS = {"github": "https://github.com/{u}", "gitlab": "https://gitlab.com/{u}",
     "codeberg": "https://codeberg.org/{u}", "devto": "https://dev.to/{u}",
@@ -62,8 +64,8 @@ def _native(ctx, handle: str, sites: list[str]) -> tuple[list[dict], list[dict]]
             completed = subprocess.run(command, capture_output=True, timeout=2 * ((len(sites) + 3) // 4) * ctx.timeout + 5,
                                        check=False)
     except (FileNotFoundError, PermissionError, OSError) as exc:
-        raise Failure("NATIVE_BACKEND_UNAVAILABLE", "Rebuild native/handlecheck with make for this platform", "unavailable",
-                      details={"backend": str(BACKEND)}) from exc
+        raise Failure("NATIVE_BACKEND_UNAVAILABLE", "Rebuild the native backend with make for this platform", "unavailable",
+                      details={"backend": str(BACKEND), "build_argv": ["make", "-C", str(BACKEND.parent)]}) from exc
     except subprocess.TimeoutExpired as exc:
         raise Failure("NATIVE_TIMEOUT", "Username backend exceeded its command deadline", retryable=True) from exc
     if len(completed.stdout) > 2 * 1024 * 1024:

@@ -1,16 +1,27 @@
 # Fieldkit
 
-An OSINT CLI designed for agents: discoverable commands, JSON by default, bounded public-source lookups, source evidence, and local case workspaces.
+An OSINT CLI and MCP server designed for agents: discoverable tools, structured results, bounded public-source lookups, source evidence, and local case workspaces.
 
-Fieldkit combines people/username discovery with domain, DNS, registration, TLS, web, archive, certificate-transparency, email-domain, and local-file tools. It is a working toolkit with explicit provider coverage; it is not a claim to cover every OSINT source.
+Fieldkit combines people/username discovery, public Telegram investigation, domain/DNS/registration/TLS lookups, web/archive/certificate-log observations, email-domain checks, and local-file tools. Coverage and provider failures are explicit in each result.
 
 ## Start
 
-Requires **Python 3.10+**. The Python engine uses the standard library and needs no package install.
+Requires **Python 3.11+**. Run the core CLI directly from the checkout, or install console commands and optional integrations into a virtual environment:
+
+```sh
+git clone https://github.com/guike8/fieldkit.git
+cd fieldkit
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[mcp,telegram]'
+```
+
+The core command modules use the standard library. The `mcp` extra installs the official MCP Python SDK; `telegram` adds Beautiful Soup for the adapted Bellingcat extractor. Native public Telegram helpers require no Telegram credentials.
 
 ```sh
 ./fieldkit capabilities
 ./fieldkit username octocat --site github
+./fieldkit telegram-messages telegram --limit 10
 ./fieldkit --pretty domain example.org
 ./fieldkit --case ./cases/example http https://example.org/
 ./fieldkit batch examples/tasks.jsonl
@@ -18,7 +29,15 @@ Requires **Python 3.10+**. The Python engine uses the standard library and needs
 
 `./fieldkit` is the entry point. Normal commands write one JSON envelope to stdout; diagnostics go to stderr. Add `--pretty` for indented JSON or `--text` for a human-readable view. Global options work before or after the command. Successful `case export` writes its explicitly selected format directly, unless `--output` saves it to a file.
 
-The username backend includes the Handlecheck C++ source and a prebuilt **macOS arm64** executable. On another architecture/platform, rebuild it with `make` in `native/handlecheck` using a C++17 compiler and libcurl development files. Other commands run independently of that native backend. `./fieldkit doctor` reports local availability.
+The installed `fieldkit` command uses the same interface as `./fieldkit`. The username backend includes Handlecheck C++ source and a prebuilt **macOS arm64** executable. On another architecture/platform, run `make -C native/handlecheck` with a C++17 compiler and libcurl development files. Wheels also install the backend source/Makefile under the environment's `share/fieldkit/native/handlecheck` directory. Other commands run independently of the native backend. `fieldkit doctor` reports availability and its backend path.
+
+## MCP server
+
+```sh
+fieldkit-mcp --workspace /absolute/path/to/investigations --case /absolute/path/to/investigations/cases/default
+```
+
+The default transport is stdio. MCP clients discover individually named tools such as `fieldkit_username`, `fieldkit_telegram_messages`, and `fieldkit_bellingcat_telegram`, each with input schemas and structured evidence results. Local file reads stay inside the configured workspace, and optional case output uses a fixed directory. See [MCP.md](MCP.md) for client configuration, HTTP loopback mode, and tool-call examples.
 
 ## Commands
 
@@ -29,6 +48,11 @@ The username backend includes the Handlecheck C++ source and a prebuilt **macOS 
 | `username` | Exact-handle checks plus separately labeled candidate links. | `./fieldkit username octocat --site github` |
 | `person` | Public discovery queries/candidates from a supplied name and context. | `./fieldkit person 'Ada Lovelace' --context computing` |
 | `profile` | Inspect a supported public profile URL. | `./fieldkit profile https://github.com/octocat` |
+| `telegram-profile` | Public Telegram profile/channel metadata. | `./fieldkit telegram-profile telegram` |
+| `telegram-messages` | Bounded public Telegram channel previews. | `./fieldkit telegram-messages telegram --limit 10` |
+| `telegram-post` | Inspect one public Telegram post URL. | `./fieldkit telegram-post https://t.me/telegram/1` |
+| `telegram-export` | Analyze a local Telegram Desktop JSON export. | `./fieldkit telegram-export ./export.json --limit 20` |
+| `bellingcat-telegram` | Adapted Bellingcat TelegramExtractor public-post metadata/media references. | `./fieldkit bellingcat-telegram https://t.me/telegram/1` |
 | `search` | Web search through an optional Brave API key. | `./fieldkit search 'example.org documentation' --limit 5` |
 | `dns` | Public DNS records, including explicit record types. | `./fieldkit dns example.org --type A,MX` |
 | `rdap` | Registration data for a domain, public IP, or ASN. | `./fieldkit rdap example.org --kind domain` |
@@ -44,6 +68,8 @@ The username backend includes the Handlecheck C++ source and a prebuilt **macOS 
 | `batch` | Execute JSONL jobs from a file or stdin. | `./fieldkit batch examples/tasks.jsonl` |
 | `case` | Initialize, inspect, verify, or export a local evidence workspace. | `./fieldkit case verify ./cases/example` |
 | `doctor` | Inspect backend and configuration availability. | `./fieldkit doctor` |
+| `integrations` | Discover upstream integrations, versions, and dependency availability. | `./fieldkit integrations` |
+| `mcp` | Start the MCP server with workspace and transport options. | `./fieldkit mcp --workspace /absolute/path/to/investigations` |
 
 `capabilities` is authoritative for the current command options and provider schemas. An archive query is exact by default; `--prefix` deliberately broadens it to a URL prefix. `domain` runs DNS and RDAP by default; repeat `--module` to choose supporting modules, such as `--module dns --module tls --module http`.
 
@@ -56,6 +82,24 @@ The native verified-profile catalog covers **GitHub, GitLab, Codeberg, DEV, Lich
 Candidate URLs for other platforms, including Instagram, X, and TikTok, are **unverified discovery leads**. A generated URL does not show that an account exists. Candidate links are enabled by default; `--no-candidates` omits them. Platform access controls, login walls, and provider outages can prevent verification.
 
 `person` organizes a supplied name and context into discovery leads. It does not automatically merge accounts into one identity. Use `--search` to request optional web-search enrichment; inspect the returned evidence before associating any result with a person.
+
+## Telegram and Bellingcat
+
+`telegram-profile`, `telegram-messages`, and `telegram-post` collect bounded observations from Telegram's public web previews. `telegram-export` analyzes an existing Telegram Desktop JSON export locally, with filters and source citations. Local exports are not uploaded.
+
+`bellingcat-telegram` invokes Fieldkit's adapted copy of **Bellingcat Auto Archiver's TelegramExtractor**, pinned to upstream commit `0507bf21793c2d3621a31295a7e166c8bfcec3e4` (Auto Archiver 1.3.1). It uses Bellingcat's public-post extraction algorithm with Fieldkit's bounded HTTP transport and evidence adapters. Install `.[telegram]` for its Beautiful Soup dependency. The full Auto Archiver application is not installed.
+
+```sh
+fieldkit telegram-profile telegram
+fieldkit telegram-messages telegram --limit 10 --query update
+fieldkit telegram-post https://t.me/telegram/1
+fieldkit telegram-export ./export.json --limit 20 --query example
+fieldkit bellingcat-telegram https://t.me/telegram/1
+```
+
+The Bellingcat tool returns media references by default. Explicit `--download-media --max-media 3` opts into bounded public media-body capture, which can be preserved with `--case`. All five commands are also exposed as MCP tool calls. Read [THIRD_PARTY.md](THIRD_PARTY.md) and the [vendoring record](third_party/bellingcat/VENDOR.md) for attribution and adaptation details.
+
+These workflows use public previews or a supplied local export. Missing previews, private channels, access blocks, and rate limits remain explicit results; they do not establish that a channel, user, or post is absent from Telegram.
 
 ## Search configuration
 
@@ -98,6 +142,6 @@ External titles, snippets, pages, profile fields, and file contents are untruste
 python3 -m unittest discover -s tests -v
 ```
 
-The Python fixture tests do not require live provider access. Native regression tests are available through `make test` in `native/handlecheck`. Live checks should be targeted and respect each provider's rate limits; successful fixtures do not establish a universal accuracy score.
+The Python fixture tests do not require live provider access. Install `.[mcp,telegram]` to exercise optional integration and actual MCP protocol tests. Native regression tests are available through `make test` in `native/handlecheck`. GitHub Actions runs native tests, offline Python/MCP tests, builds distributions, and checks installed entry points on Linux and macOS. Live checks should be targeted and respect each provider's rate limits; successful fixtures do not establish a universal accuracy score.
 
-The November 11, 2026 validation passed **177 Python fixture tests**. A 15-job live smoke check completed 13 jobs, including GitHub/Bluesky/YouTube/Steam/Mastodon profile checks and supporting infrastructure, web, archive, email-domain, and local-file work. Reddit was blocked and the CT request timed out at eight seconds; both remained unresolved. Case verification passed for the 15 stored reports and 21 artifacts. Web search returned `unavailable` without a key; authenticated live search was not tested.
+The initial November 11, 2026 validation passed **177 Python fixture tests** before the MCP/Telegram extension. A 15-job live smoke check completed 13 jobs, including GitHub/Bluesky/YouTube/Steam/Mastodon profile checks and supporting infrastructure, web, archive, email-domain, and local-file work. Reddit was blocked and CT timed out; both remained unresolved. Case verification passed for the 15 stored reports and 21 artifacts. See [validation](validation/) for recorded results. Authenticated Brave search was not live-tested.

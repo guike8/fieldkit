@@ -1,0 +1,11 @@
+include README.md AGENT_USAGE.md MCP.md THIRD_PARTY.md Makefile fieldkit
+recursive-include examples *.json *.jsonl
+recursive-include tests *.py
+recursive-include validation *.md *.json
+recursive-include native/handlecheck *.cpp *.hpp *.py *.md Makefile LICENSE.MIT
+recursive-include third_party *.md LICENSE
+include native/handlecheck/handlecheck
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune native/handlecheck/build
+prune cases
+prune work

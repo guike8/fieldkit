@@ -11,3 +11,8 @@ work/
 *.sqlite3
 *.sqlite3-*
 blobs/
+build/
+dist/
+*.egg-info/
+*.session
+*.session-journal
