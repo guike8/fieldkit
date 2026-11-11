@@ -16,3 +16,5 @@ dist/
 *.egg-info/
 *.session
 *.session-journal
+/target/
+/legacy/native/handlecheck/build/

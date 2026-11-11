@@ -1,0 +1,62 @@
+{
+  "version": "0.5.0",
+  "runtime": "rust",
+  "platform": "macOS arm64",
+  "checks": {
+    "rust_tests": {
+      "passed": 70,
+      "failed": 0
+    },
+    "rustfmt": "passed",
+    "clippy_warnings_denied": "passed",
+    "browser_workflow": "passed",
+    "release_build": "passed",
+    "existing_v1_case_integrity": "passed"
+  },
+  "mcp": {
+    "client": "official MCP Python SDK 2.3.0 (test client only)",
+    "server": "native Rust stdio",
+    "negotiated_protocol": "2025-06-18",
+    "advertised_tools": 44,
+    "discovery_and_case_verify": "passed"
+  },
+  "live_discovery": {
+    "seed": "octocat",
+    "sites": [
+      "github"
+    ],
+    "max_jobs": 4,
+    "max_depth": 2,
+    "collected_reports": 4,
+    "all_collector_statuses": "ok",
+    "ontology_records": {
+      "discovery": 1,
+      "discovery_jobs": 82,
+      "ontology_claims": 84,
+      "ontology_concepts": 3,
+      "ontology_relations": 4,
+      "ontology_state": 1
+    },
+    "integrity": "passed",
+    "raw_captures": "retained in local scratch case, excluded from repository"
+  },
+  "tui": {
+    "transport": "actual PTY plus Ratatui TestBackend",
+    "workflow": [
+      "plan discovery form",
+      "save",
+      "run background collectors",
+      "observe ontology growth",
+      "select claim",
+      "open original evidence",
+      "quit and restore terminal"
+    ],
+    "result": "passed"
+  },
+  "limitations": [
+    "Ontology derives from structured collector observations; free-form LLM document extraction is not implemented.",
+    "NVIDIA Auto Ontology service is not connected.",
+    "Active case and ontology synchronization select latest 500 reports; persisted captures remain in the case."
+  ],
+  "release_binary_sha256": "8b5efb1f71fd65a10e2537eb5f626166afd89f8ba3f5590c0f66198c80c08a62"
+}

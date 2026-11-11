@@ -1,0 +1,5 @@
+{
+  "command": "username",
+  "target": "octocat",
+  "options": {"sites": ["github"], "include_candidates": false}
+}

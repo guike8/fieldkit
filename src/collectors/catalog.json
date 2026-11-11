@@ -1,0 +1,767 @@
+[
+  {
+    "name": "username",
+    "description": "Verify public handles and return separate unverified social candidate links",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "username"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sites": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": ""
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "include_candidates": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "person",
+    "description": "Create name/context search queries; optionally run public web search without merging identities",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "person"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "context": {
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            },
+            "search": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "profile",
+    "description": "Verify supported public profile URLs; inspect other pages as unverified URL evidence",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "profile"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "search",
+    "description": "Public web search via optional BRAVE_SEARCH_API_KEY",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "search"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "dns",
+    "description": "Public DNS-over-HTTPS records including reverse PTR",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "dns"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "types": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "A",
+                  "AAAA",
+                  "MX",
+                  "NS",
+                  "TXT",
+                  "CAA",
+                  "CNAME",
+                  "SOA",
+                  "PTR",
+                  "SRV"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 50
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "rdap",
+    "description": "Authoritative registration data using IANA bootstrap",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "rdap"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "domain",
+                "ip",
+                "asn"
+              ],
+              "default": "auto"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "tls",
+    "description": "Verified public TLS leaf certificate and connection metadata",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "tls"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 443
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "ct",
+    "description": "Historical names observed in public certificate logs, not proof of current DNS",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "ct"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "http",
+    "description": "Bounded public page metadata, outbound links, headers, and source hashes",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "http"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "archive",
+    "description": "Bounded Internet Archive CDX index observations; no replay crawling",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "archive"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "prefix": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "email",
+    "description": "Email syntax and domain MX/SPF/DMARC; does not probe mailbox existence",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "email"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "file",
+    "description": "Local regular-file hashes, size, format signatures and image dimensions",
+    "local_target": true,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "file"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "extract",
+    "description": "Extract unverified indicators from a local UTF-8 evidence file with offsets",
+    "local_target": true,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "extract"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "url",
+                  "email",
+                  "domain",
+                  "ipv4",
+                  "ipv6"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 50
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "domain",
+    "description": "Compose supporting domain modules with individually reported failures",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "domain"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "modules": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "dns",
+                  "rdap",
+                  "ct",
+                  "tls",
+                  "http"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 50,
+              "default": [
+                "dns",
+                "rdap"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "doctor",
+    "description": "Check runtime, native backend, and optional key availability without network requests",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "const": "doctor"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "integrations",
+    "description": "Describe installed optional integrations, upstream provenance, and supported operations",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "const": "integrations"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "telegram-profile",
+    "description": "Public Telegram profile/channel metadata from an exact handle or t.me URL",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "telegram-profile"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "telegram-messages",
+    "description": "One bounded public Telegram channel preview page with message provenance",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "telegram-messages"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "before": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "description": "",
+              "maxLength": 200
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "telegram-post",
+    "description": "Inspect a single public Telegram post URL without logging in",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "telegram-post"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "telegram-export",
+    "description": "Analyze a local Telegram Desktop JSON export; records never leave the local process",
+    "local_target": true,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "telegram-export"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "description": "",
+              "maxLength": 200
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "bellingcat-telegram",
+    "description": "Bellingcat Auto Archiver Telegram extractor, pinned MIT adaptation with bounded public I/O",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "target"
+      ],
+      "properties": {
+        "command": {
+          "const": "bellingcat-telegram"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "",
+          "maxLength": 8192
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "download_media": {
+              "type": "boolean",
+              "default": false
+            },
+            "max_media": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            }
+          }
+        }
+      }
+    }
+  }
+]

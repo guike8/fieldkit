@@ -1,4 +1,4 @@
-name: Tests
+name: Rust tests
 
 on:
   push:
@@ -10,46 +10,31 @@ permissions:
 
 jobs:
   test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    name: ${{ matrix.os }} / Rust
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            python: '3.11'
-          - os: ubuntu-latest
-            python: '3.14'
-          - os: macos-latest
-            python: '3.14'
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install Linux native build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libcurl4-openssl-dev
-      - name: Native regression tests
-        run: make -C native/handlecheck test
-      - name: Install Python package and optional integrations
-        run: python -m pip install '.[mcp,telegram,tui,dev]'
-      - name: Offline unit and MCP protocol tests
-        run: python -m unittest discover -s tests -v
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Check formatting
+        run: cargo +stable fmt --all -- --check
+      - name: Lint native runtime
+        run: cargo +stable clippy --locked --all-targets -- -D warnings
+      - name: Test collectors and investigation workflows
+        run: cargo +stable test --locked
       - name: Browser workflow checks
         run: node tests/frontend_test.mjs
-      - name: Build wheel and source distribution
-        run: python -m build --outdir "$RUNNER_TEMP/fieldkit-dist"
-      - name: Reinstall built wheel
-        run: python -m pip install --force-reinstall --no-deps "$RUNNER_TEMP"/fieldkit-dist/*.whl
-      - name: Check installed entry points outside checkout
-        working-directory: ${{ runner.temp }}
+      - name: Build standalone runtime
+        run: cargo +stable build --release --locked
+      - name: Check entry points
         run: |
-          fieldkit doctor
-          fieldkit capabilities > fieldkit-capabilities.json
-          fieldkit-mcp --help
-          fieldkit-tui --help
-          fieldkit-app --help
+          ./target/release/fieldkit doctor
+          ./target/release/fieldkit capabilities
+          ./target/release/fieldkit tui --help
+          ./target/release/fieldkit mcp --help
+          ./target/release/fieldkit app --help

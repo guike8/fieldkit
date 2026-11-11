@@ -1,11 +1,12 @@
-PYTHON ?= python3
+CARGO ?= cargo
 
-.PHONY: test native doctor
+.PHONY: test build doctor
 test:
-	$(PYTHON) -m unittest discover -s tests -v
+	$(CARGO) test --locked
+	node tests/frontend_test.mjs
 
-native:
-	$(MAKE) -C native/handlecheck
+build:
+	$(CARGO) build --release --locked
 
 doctor:
 	./fieldkit doctor
