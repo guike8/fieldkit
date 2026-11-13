@@ -1,7 +1,9 @@
 # Inkling as the Fieldkit agent
 
-A standard-library Python 3.10+ agent talks to the existing Rust stdio MCP server.
-No Rust model SDK, NVIDIA gateway changes, shell tool, generic collector tool, or
+A standalone Rust 2024 workspace package, `fieldkit-agent`, talks to the existing
+Rust stdio MCP server. It provides a reusable library and the `fieldkit-agent` and
+`fieldkit-agent-benchmark` binaries; no Python interpreter is needed.
+No provider SDK, NVIDIA gateway changes, shell tool, generic collector tool, or
 finding-approval tool is added. Model/provider selection remains interchangeable.
 Default model: `thinkingmachines/Inkling-2-Small`; default OpenAI-compatible API:
 Together (`https://api.together.ai/v1`). Hosted availability, account access and
@@ -13,16 +15,23 @@ does **not** establish that the hosted model works or is a good investigator.
 From the repository root:
 
 ```sh
-cargo build --locked
-make test-inkling
+cargo build --locked --workspace
+cargo test --locked --workspace
+cargo run --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode replay
 ```
 
 The unit tests cover the chat request contract with a loopback HTTP server,
 protocol failures, budgets, restricted tools, redirect/key protection, preserved
 operator scope, and native MCP planning/proposal rejection. The native tests use
 `target/debug/fieldkit`; set `FIELDKIT_TEST_BINARY` to another **current** build if
-needed. Without a binary they explicitly skip those native integration tests. An old
+needed. Without a binary they explicitly print `SKIP native MCP integration` (use
+`cargo test -p fieldkit-agent -- --nocapture` to see captured diagnostics). An old
 binary missing investigation tools fails rather than pretending compatibility.
+The stdio transport uses nonblocking Unix pipes and deadline-bounded reads **and
+writes**; Linux and macOS are supported. Tests use native Rust, synthetic tools,
+loopback mock HTTP servers and disposable shell MCP stubs, never host Python.
+Several related negative cases are grouped into Rust tests; test counts and token
+counts are not advertised as numerically equivalent to the former implementation.
 
 The benchmark's default `--mode replay` uses scripted reference decisions and
 synthetic tool results. This validates the **harness**, not Inkling's quality.
@@ -35,7 +44,7 @@ Export `INKLING_API_KEY` in your local shell using your provider's secret-manage
 workflow; do not paste it into chat, commit it, or pass it as a CLI argument. Then:
 
 ```sh
-python3 -I integrations/inkling/benchmark.py --mode live \
+cargo run --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode live \
   --output /tmp/fieldkit-inkling-live-01.json
 ```
 
@@ -47,7 +56,7 @@ new output filename on each run; reports are created privately and never overwri
 For DeepInfra (with the corresponding provider key):
 
 ```sh
-python3 -I integrations/inkling/benchmark.py --mode live \
+cargo run --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode live \
   --base-url https://api.deepinfra.com/v1/openai \
   --api-key-env DEEPINFRA_API_KEY \
   --output /tmp/fieldkit-inkling-deepinfra-01.json
@@ -69,12 +78,14 @@ with a new disposable case, not a private existing investigation. Collection is
 disabled by default; even plan-only mode writes a local investigation and plans.
 
 ```sh
-python3 -I integrations/inkling/fieldkit_agent.py \
+cargo run --locked -p fieldkit-agent --bin fieldkit-agent -- \
   --binary "$PWD/target/debug/fieldkit" \
   --workspace "$PWD" --case "$PWD/cases/inkling-trial" \
   --mode infrastructure --seed example.org \
   'What public infrastructure is observable for example.org?'
 ```
+
+The actual-case runner accepts `--mode person|organization|infrastructure|crypto`. Crypto mode requires explicit `ethereum:0x…` address/transaction seeds and the engine's separate crypto collector allowlist. It is still plan-only unless `--allow-collection` is supplied; plan-only execution **does** call the configured model provider. See [Crypto Forensics](../../CRYPTO_FORENSICS.md). The six existing scripted replay scenarios do not evaluate crypto tracing or live provider availability.
 
 Add `--allow-collection` only to authorize bounded public collection for that scope.
 View the same case using the existing TUI:

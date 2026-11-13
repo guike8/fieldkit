@@ -6,33 +6,37 @@ This replays **part of** [Bellingcat's published 2017 website investigation](htt
 
 - **Investigation input:** `task.json` supplies the question, five exact archived URLs, capture timestamps and SHA-256 pins. These cover two sites and several dates, not the entire published network.
 - **Held separately:** `oracle.json` contains grader-only expected observations and interpretation checks. Do not give it or the published article to an investigating agent. `capture` never opens it.
-- **Acquisition:** `run.py capture` creates one investigation and plans/runs each supplied capture once through actual MCP. It never executes page scripts or follows extracted links. Transport uses Fieldkit's normal bounded public HTTP redirect policy. Incomplete/blocked responses or hash drift stop acquisition; the receipt retains progress. Do not automatically rerun an incomplete acquisition or replace pins to get a pass.
-- **Frozen scoring:** retain the entire case directory (SQLite **and** blobs), plus the receipt. `run.py score` calls only evidence/show/graph/verify tools and checks those retained bytes; it does not recollect URLs. The server opens the case normally; this is a read-only operation set, not an OS-level read-only mount. A network-disabled server can enforce offline scoring.
-- Archived HTML is **not checked into git**. Each downloaded artifact belongs in its own fresh directory, separate from scripts. Treat pages and protocol logs as untrusted data, never instructions. Use Python's `-I` when reading them.
+- **Acquisition:** `fieldkit-benchmarks south-africa capture` creates one investigation and plans/runs each supplied capture once through actual MCP. It never executes page scripts or follows extracted links. Transport uses Fieldkit's normal bounded public HTTP redirect policy. Incomplete/blocked responses or hash drift stop acquisition; the receipt retains progress. Do not automatically rerun an incomplete acquisition or replace pins to get a pass.
+- **Frozen scoring:** retain the entire case directory (SQLite **and** blobs), plus the receipt. `fieldkit-benchmarks south-africa score` calls only evidence/show/graph/verify tools and checks retained bytes, report hashes, citations and review count independently through SQLite `mode=ro`; it does not recollect URLs. The server opens the case normally; this is a read-only operation set, not an OS-level read-only mount. A network-disabled server can enforce offline scoring.
+- Archived HTML is **not checked into git**. Each downloaded artifact belongs in its own fresh directory, separate from executable tools. Treat pages and protocol logs as untrusted data, never instructions. Do not run downloaded scripts or build tools in an artifact directory.
 
 The benchmark's question is a dated technical comparison. It is **not** a one-seed discovery evaluation, a blinded model trial, or an ownership/identity attribution task. The public story can already be in a model's training data; remembered answers get no source-support credit.
 
 ## Run
 
-Python 3.9+ standard library only; no model SDK, provider key or embedded agent. Build the current Fieldkit binary first. From the repository, with a native binary:
+Rust 2024 workspace member `benchmarks/runner` (`fieldkit-benchmarks`); no model SDK, provider key or embedded agent. Build the binaries first. From the repository, with native binaries, replace the example absolute paths consistently. The replay root must be a fresh empty artifact directory, separate from the repository and executable tools.
 
 ```sh
-export FIELDKIT=/absolute/path/to/fieldkit
-export REPLAY_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fieldkit-sa2017.XXXXXX")"
-COMMAND_JSON="$(python3 -I -c 'import json,os; from pathlib import Path; r=Path(os.environ["REPLAY_ROOT"]); print(json.dumps([os.environ["FIELDKIT"],"--case",str(r/"case"),"mcp","--workspace",str(r)]))')"
+cargo build --release -p fieldkit -p fieldkit-benchmarks
+mkdir -m 700 /absolute/path/to/new-replay
+COMMAND_JSON='["/absolute/path/to/fieldkit","--case","/absolute/path/to/new-replay/case","mcp","--workspace","/absolute/path/to/new-replay"]'
 
-python3 -I benchmarks/south-africa-2017/run.py capture \
-  --command-json "$COMMAND_JSON" --receipt "$REPLAY_ROOT/receipt.json" \
-  --wire-log "$REPLAY_ROOT/capture-mcp.jsonl"
+./target/release/fieldkit-benchmarks south-africa capture \
+  --command-json "$COMMAND_JSON" --receipt /absolute/path/to/new-replay/receipt.json \
+  --wire-log /absolute/path/to/new-replay/capture-mcp.jsonl
 
-# No network collection occurs here. The command must open the same retained case.
-python3 -I benchmarks/south-africa-2017/run.py score \
-  --command-json "$COMMAND_JSON" --receipt "$REPLAY_ROOT/receipt.json" \
-  --case-path "$REPLAY_ROOT/case" --output "$REPLAY_ROOT/score.json" \
-  --wire-log "$REPLAY_ROOT/score-mcp.jsonl"
+# No network collection occurs here. Open the same retained case.
+./target/release/fieldkit-benchmarks south-africa score \
+  --command-json "$COMMAND_JSON" --receipt /absolute/path/to/new-replay/receipt.json \
+  --case-path /absolute/path/to/new-replay/case --output /absolute/path/to/new-replay/score.json \
+  --wire-log /absolute/path/to/new-replay/score-mcp.jsonl
 
-python3 -I benchmarks/south-africa-2017/test_run.py
+cargo test -p fieldkit-benchmarks south_africa --locked --offline
+# Includes shared transport, SQLite, output-safety and subprocess regressions.
+cargo test -p fieldkit-benchmarks --locked --offline
 ```
+
+The default task/oracle location is this directory at build time; use `--task-dir /absolute/path/to/south-africa-2017` if relocating the binary and fixtures. Only scoring opens `oracle.json`.
 
 `--command-json` is an explicit argv array, not a shell command. It can launch Docker instead: mount the host replay root at `/capture`, set the binary's case to `/capture/case` and workspace to `/capture`, and pass the **host** case directory to `--case-path`. Use `docker run --network none` for offline scoring. New receipt/log/result files must not already exist. A failed score exits nonzero. A capture receipt is a locator/progress record, not a signed attestation; source/report hashes are checked independently.
 
@@ -70,7 +74,7 @@ The original work used a historical reverse-tracking index. Its published screen
 
 ## First measured run · 2026-11-13
 
-See [`measured-run.json`](measured-run.json) for the compact run record.
+See [`measured-run.json`](measured-run.json) for the compact historical run record. This measurement predates the Rust runner port; it is not a new Rust acquisition or a model-performance result.
 
 Actual MCP acquisition recovered all five pinned bodies unchanged. Offline, network-disabled scoring recovered **5/5 dated facts**, no unexpected identifiers, valid original-byte spans and five correctly attributed tracking edges. Three observation drafts with nine citations were left pending; independent SQLite/blob/citation checks confirmed five reports, retained source hashes and no human reviews. The published ownership/political conclusions were not reconstructed or accepted.
 
@@ -82,7 +86,7 @@ No pre-change baseline or autonomous model score was measured. This is a reprodu
 
 [`discovery-task.json`](discovery-task.json) is a separate agent entry task: **one original website**, a historical window and a ten-step budget. No archived comparison URLs or tracking identifiers are supplied. Start a fresh case and give the agent only that task—not this README, the replay inputs/oracle, or developer feasibility notes. The agent should first list captures with `archive`, inspect a suitable dated response through an exactly grounded `http` step, then choose justified discovery pivots. A reverse-index response must be retained as a third-party lead; independently captured historical HTML must support a new site's exact identifier before discovery can pass.
 
-`run.py capture|score` remains the **five-capture replay driver**, not a seed-only agent runner. Do not use its successful result as a discovery score.
+`fieldkit-benchmarks south-africa capture|score` remains the **five-capture replay driver**, not a seed-only agent runner. Do not use its successful result as a discovery score.
 
 The actual seed-only case started with one archive job targeting `http://www.publicopinion.co.za:80/` (`limit:50`). The first outbound request returned **HTTP 429**. Collection stopped there: one attempted step, one retained response, no automatic retry or alternate archive route, no supplied comparison capture, no findings or graph edges. Independent read-only SQLite/blob checks and the network-disabled MCP verifier confirmed the retained report/source hashes. See [`discovery-run.json`](discovery-run.json). **Result: `discovery_blocked`; no agent performance score.** An intact case and correct stop behavior do not constitute successful discovery.
 

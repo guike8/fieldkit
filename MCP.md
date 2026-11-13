@@ -27,13 +27,19 @@ The query is sent to Open Measures, not Telegram. The public API requires no key
 
 With a configured case, response bytes and reports enter the same evidence ledger used by the TUI. Results are third-party archive observations with `directly_verified: false`, separate publication/archive/collection times and raw-source pointers. Graph URLs are search-result leads, not verified Telegram posts or identity claims. Use `fieldkit_telegram_post` only for selected public-post checks; request human approval before identity interpretations. Existing review tools have no new approval-role enforcement in this connector.
 
+## Crypto Forensics
+
+Create a scoped investigation with `mode:"crypto"` and 1–5 explicit `ethereum:0x…` seeds (40 hex digits for an address, 64 for a transaction). Only `evm-address` and `evm-transaction` jobs are allowed in that mode; noncrypto recon excludes them. The direct tools are `fieldkit_evm_address` and `fieldkit_evm_transaction`. Collection sends the target to Ethereum Blockscout and is bounded, without automatic pagination/retries or a paid fallback. Source-backed transaction roles are not identity, criminality or successful-value-transfer conclusions.
+
+Creation and planning are local-only. Inspect preserved evidence and exact normalized `/data/...` target strings before explicitly planning a pivot. The same ten-step budget, source-reader checks and pending human-review gate apply. See [Crypto Forensics](CRYPTO_FORENSICS.md) for examples, amounts, provider limitations and unsupported features.
+
 ## Shared investigation and graph tools
 
 With a case configured, an interchangeable agent can turn a natural-language question into a persistent investigation. No model-provider SDK is required. All tools share the TUI's case.
 
 | Tool | Arguments / result |
 | --- | --- |
-| `fieldkit_investigation_create` | `question`, optional `searches` for Telegram; or `mode` (`person`, `organization`, `infrastructure`) and 1–5 `seeds`; persists only |
+| `fieldkit_investigation_create` | `question`, optional `searches` for Telegram; or `mode` (`person`, `organization`, `infrastructure`, `crypto`) and 1–5 `seeds`; persists only |
 | `fieldkit_investigation_plan_step` | `id`, `job`, `rationale`, optional `lead:{step_id,pointer}`; new recon targets must exactly match an observed `/data/...` string |
 | `fieldkit_graph_show` | No arguments; read-only, typed source-observation nodes/edges and shared focus |
 | `fieldkit_graph_focus` | `entity_id`; presents a source-backed neighborhood in the idle TUI without interrupting review/editing |

@@ -1,26 +1,26 @@
 CARGO ?= cargo
-PYTHON ?= python3
+FIELDKIT_TEST_BINARY ?= $(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target))/debug/fieldkit
 
 .PHONY: test test-inkling test-historical-replay test-source-reconstruction build doctor
 test:
-	$(CARGO) test --locked
+	$(CARGO) build --locked -p fieldkit
+	FIELDKIT_TEST_BINARY="$(FIELDKIT_TEST_BINARY)" $(CARGO) test --workspace --locked
 	node tests/frontend_test.mjs
-	$(MAKE) test-historical-replay
-	$(MAKE) test-source-reconstruction
-	$(MAKE) test-inkling
+	$(CARGO) run --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode replay
 
 test-historical-replay:
-	$(PYTHON) -I benchmarks/south-africa-2017/test_run.py
+	$(CARGO) test --locked -p fieldkit-benchmarks south_africa
 
 test-source-reconstruction:
-	$(PYTHON) -I benchmarks/event-stream-2018/test_run.py
+	$(CARGO) test --locked -p fieldkit-benchmarks event_stream
 
 test-inkling:
-	$(PYTHON) -I -m unittest discover -s integrations/inkling -p 'test_*.py' -v
-	$(PYTHON) -I integrations/inkling/benchmark.py --mode replay
+	$(CARGO) build --locked -p fieldkit
+	FIELDKIT_TEST_BINARY="$(FIELDKIT_TEST_BINARY)" $(CARGO) test --locked -p fieldkit-agent
+	$(CARGO) run --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode replay
 
 build:
-	$(CARGO) build --release --locked
+	$(CARGO) build --workspace --release --locked
 
 doctor:
 	./fieldkit doctor

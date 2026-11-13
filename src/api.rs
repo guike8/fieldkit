@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 pub const OPERATIONS: &[(&str, &str)] = &[
     (
         "investigations/create",
-        "Persist the original question and bounded Telegram searches or explicit person/organization/infrastructure recon seeds; no collection",
+        "Persist the original question and bounded Telegram searches or explicit person/organization/infrastructure/crypto recon seeds; no collection",
     ),
     (
         "investigations/plan",
@@ -111,7 +111,7 @@ pub fn operation_schema(operation: &str) -> Value {
     let refs = json!({"type":"array","items":identifier,"maxItems":50});
     let (properties, required) = match operation {
         "investigations/create" => (
-            json!({"question":{"type":"string","minLength":1,"maxLength":4000},"mode":{"enum":["telegram","person","organization","infrastructure"]},"seeds":{"type":"array","maxItems":5,"items":{"type":"string","minLength":1,"maxLength":2048}},"searches":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"command":{"enum":["telegram-search"]},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false}}}),
+            json!({"question":{"type":"string","minLength":1,"maxLength":4000},"mode":{"type":"string","enum":["telegram","person","organization","infrastructure","crypto"]},"seeds":{"type":"array","maxItems":5,"items":{"type":"string","minLength":1,"maxLength":2048}},"searches":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"command":{"enum":["telegram-search"]},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false}}}),
             vec!["question"],
         ),
         "graph/show" => (json!({}), vec![]),

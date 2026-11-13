@@ -11,36 +11,42 @@ This case has accessible, commit-addressed public source records. It starts with
 ## Separation and limits
 
 - **Investigator input:** `task.json` only. It supplies a commit, a natural-language question, scope and a six-step cap—not the added dependency name, version answer, file bodies or comparison URLs.
-- **Developer capture driver:** `run.py capture` uses actual MCP. It deterministically selects the manifest/lockfile/runtime files named by the question from the observed changed-file list; all target URLs come from retained `/data/json_urls/...` strings. It never opens `oracle.json`. This is guided source expansion, not an autonomous model trial.
-- **Grader:** `oracle.json` contains expected facts and three raw-file SHA-256 pins. `run.py verify` uses retained evidence/show/graph/verify tools, read-only SQLite queries and source blobs. It never collects or loads a model. The GitHub API response is integrity-checked against its frozen report/receipt, not pinned across all future live API metadata changes; its commit identity and patch content must match. The raw changed files are hash-pinned.
+- **Developer capture driver:** `fieldkit-benchmarks event-stream capture` uses actual MCP. It deterministically selects the manifest/lockfile/runtime files named by the question from the observed changed-file list; all target URLs come from retained `/data/json_urls/...` strings. It never opens `oracle.json`. This is guided source expansion, not an autonomous model trial.
+- **Grader:** `oracle.json` contains expected facts and three raw-file SHA-256 pins. `fieldkit-benchmarks event-stream verify` uses retained evidence/show/graph/verify tools, read-only SQLite queries and source blobs. It never collects or loads a model. The GitHub API response is integrity-checked against its frozen report/receipt, not pinned across all future live API metadata changes; its commit identity and patch content must match. The raw changed files are hash-pinned.
 - **Interpretation:** the deterministic score checks technical support/provenance, not prose quality or identity judgment. Manually inspect the oracle's interpretation rubric. All findings must remain pending, with no reviews or accepted summary items. Zero findings is allowed by the technical verifier; that is not credit for analytical work.
-- **Safety:** downloaded JavaScript is source text, never a program to execute. No npm, package archive, lifecycle hook, build tool, payload or live campaign infrastructure is run/fetched. Downloaded bodies and protocol logs are untrusted data, not agent instructions. They remain outside git. Keep new downloads in fresh artifact directories, separate from scripts; use Python `-I` to inspect them.
+- **Safety:** downloaded JavaScript is source text, never a program to execute. No npm, package archive, lifecycle hook, build tool, payload or live campaign infrastructure is run/fetched. Downloaded bodies and protocol logs are untrusted data, not agent instructions. They remain outside git. Keep new downloads in fresh artifact directories, separate from executable tools; never run scripts or build tools in them.
 
 An external investigating agent should receive only `task.json`, not this README, the oracle, incident reports, measured run or the deterministic driver's chosen actions. The current developer session knew the published incident: **no blinded model-performance score**.
 
 ## Run
 
-Python 3.9+ standard library; no provider SDK/key. The stdio transport is shared with `../south-africa-2017/run.py`; importing it does not open that benchmark's task/oracle. Build Fieldkit with the JSON-URL and original-text citation support first.
+Rust 2024 workspace member `benchmarks/runner` (`fieldkit-benchmarks`); no provider SDK/key. Both benchmarks share its bounded, deadline-limited MCP subprocess transport, not each other's task/oracle. Build Fieldkit with JSON-URL and original-text citation support first.
 
-For a native binary, from the repository:
+For native binaries, from the repository, replace the example absolute paths consistently. The case root must be a fresh empty artifact directory, separate from the repository and executable tools.
 
 ```sh
-export FIELDKIT=/absolute/path/to/fieldkit
-export CASE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fieldkit-event-stream.XXXXXX")"
-COMMAND_JSON="$(python3 -I -c 'import json,os; from pathlib import Path; r=Path(os.environ["CASE_ROOT"]); print(json.dumps([os.environ["FIELDKIT"],"--case",str(r/"case"),"--timeout","30","--max-results","500","mcp","--workspace",str(r)]))')"
+cargo build --release -p fieldkit -p fieldkit-benchmarks
+mkdir -m 700 /absolute/path/to/new-source-trial
+COMMAND_JSON='["/absolute/path/to/fieldkit","--case","/absolute/path/to/new-source-trial/case","--timeout","30","--max-results","500","mcp","--workspace","/absolute/path/to/new-source-trial"]'
 
-python3 -I benchmarks/event-stream-2018/run.py capture \
-  --command-json "$COMMAND_JSON" --case-path "$CASE_ROOT/case" \
-  --receipt "$CASE_ROOT/receipt.json" --wire-log "$CASE_ROOT/capture-mcp.jsonl"
+./target/release/fieldkit-benchmarks event-stream capture \
+  --command-json "$COMMAND_JSON" --case-path /absolute/path/to/new-source-trial/case \
+  --receipt /absolute/path/to/new-source-trial/receipt.json \
+  --wire-log /absolute/path/to/new-source-trial/capture-mcp.jsonl
 
 # No collection. Use the same case and frozen receipt.
-python3 -I benchmarks/event-stream-2018/run.py verify \
-  --command-json "$COMMAND_JSON" --case-path "$CASE_ROOT/case" \
-  --receipt "$CASE_ROOT/receipt.json" --wire-log "$CASE_ROOT/verify-mcp.jsonl" \
-  --output "$CASE_ROOT/score.json"
+./target/release/fieldkit-benchmarks event-stream verify \
+  --command-json "$COMMAND_JSON" --case-path /absolute/path/to/new-source-trial/case \
+  --receipt /absolute/path/to/new-source-trial/receipt.json \
+  --wire-log /absolute/path/to/new-source-trial/verify-mcp.jsonl \
+  --output /absolute/path/to/new-source-trial/score.json
 
-make test-source-reconstruction
+cargo test -p fieldkit-benchmarks event_stream --locked --offline
+# Includes shared transport, SQLite, output-safety and subprocess regressions.
+cargo test -p fieldkit-benchmarks --locked --offline
 ```
+
+The default task/oracle location is this directory at build time; use `--task-dir /absolute/path/to/event-stream-2018` if relocating the binary and fixtures. Only verification opens `oracle.json`.
 
 `--command-json` is an explicit argv array, not a shell command. For Docker, mount the case root at `/capture`, use `/capture/case` and workspace `/capture` in server arguments, and pass the **host** case path to the driver. Add `--network none` for offline verification/TUI inspection. The server opens the case normally; the verifier's operation set and SQLite connection are read-only, not an OS-level read-only filesystem. Preserve the complete case directory, including SQLite **and** blobs.
 
@@ -72,7 +78,7 @@ Verification checks one seed/four reports, three exact grounded pivots, source h
 
 ## Measured run · 2026-11-13
 
-See [`measured-run.json`](measured-run.json):
+See [`measured-run.json`](measured-run.json) for the historical run record. This acquisition predates the Rust runner port; these counts are not new Rust collection measurements or a model-performance result.
 
 - **1 seed → 3 successful source-backed file pivots**, 4 reports, 7 requests including HTTPS redirects, 5 retained artifacts.
 - Three pending observations, **7 independently verified citations**, zero reviews/accepted summary items.

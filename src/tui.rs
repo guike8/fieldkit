@@ -225,6 +225,7 @@ impl Field {
 #[derive(Clone, Debug)]
 enum FormAction {
     Investigation,
+    CryptoInvestigation,
     InvestigationReview {
         investigation_id: String,
         finding_id: String,
@@ -1122,6 +1123,7 @@ impl Ui {
                 self.notice("Case refreshed", false);
             }
             KeyCode::Char('d') if self.view == View::Investigations => self.investigation_form(),
+            KeyCode::Char('C') => self.crypto_investigation_form(),
             KeyCode::Char('d') => self.discovery_form(),
             KeyCode::Char('m') => self.planner_form(),
             KeyCode::Char('g') if self.view == View::Investigations => {
@@ -1319,17 +1321,35 @@ impl Ui {
             ],
         )));
     }
+    fn crypto_investigation_form(&mut self) {
+        self.modal = Some(Modal::Form(Form::new(
+            "Crypto Forensics · Ethereum · save locally",
+            FormAction::CryptoInvestigation,
+            vec![
+                Field::new(
+                    "Question",
+                    "",
+                    "What should the on-chain evidence support or challenge?",
+                ),
+                Field::new(
+                    "Ethereum address or transaction",
+                    "",
+                    "ethereum:0x + 40 address / 64 transaction hex digits; g later sends this to Blockscout",
+                ),
+            ],
+        )));
+    }
     fn start_investigation_step(&mut self) {
         let Some(investigation) = self.selected_investigation() else {
             self.notice(
-                "Press d to save an investigation question and optional search first.",
+                "Press d for a Telegram question or C for Crypto Forensics; saving never collects.",
                 true,
             );
             return;
         };
         let steps = array(&investigation, "steps");
         let Some(step) = steps.get(self.child_selected).filter(|_| self.child_focus) else {
-            self.notice("Enter switches to steps/findings. Select a search step and press g; findings use r for human review.", true);
+            self.notice("Enter switches to steps/findings. Select a pending collection step and press g; findings use r for human review.", true);
             return;
         };
         if self.worker.is_some() {
@@ -1339,13 +1359,17 @@ impl Ui {
         let id = text(&investigation, "id").to_owned();
         let step_id = text(step, "id").to_owned();
         self.spawn(
-            format!("Telegram investigation step · {}", text(step, "target")),
+            format!(
+                "{} investigation step · {}",
+                text(step, "command"),
+                text(step, "target")
+            ),
             move |model, _, _| model.run_investigation_step(&id, &step_id),
         );
         if let Some(worker) = &mut self.worker {
             worker.kind = WorkerKind::InvestigationStep;
         }
-        self.notice("Running one bounded Telegram search step · no automatic follow-ups or finding acceptance", false);
+        self.notice("Running one bounded collection step · no automatic follow-ups, retries or finding acceptance", false);
     }
     fn investigation_review_form(&mut self) {
         if self
@@ -1842,6 +1866,42 @@ impl Ui {
                 }
                 self.notice("Investigation saved locally; no search has run. Enter selects steps/findings; g runs one selected step; r reviews a finding.", false);
             }
+            FormAction::CryptoInvestigation => {
+                let question = required(form.value(0), "Question")?;
+                let target = required(form.value(1), "Ethereum target")?;
+                let command = if target
+                    .strip_prefix("ethereum:0x")
+                    .is_some_and(|hex| hex.len() == 64)
+                {
+                    "evm-transaction"
+                } else {
+                    "evm-address"
+                };
+                let job = Job {
+                    command: command.into(),
+                    target: Some(target.clone()),
+                    options: json!({}),
+                };
+                crate::collectors::validate_job(&job)?;
+                let record =
+                    self.workbench
+                        .create_recon_investigation(&question, "crypto", vec![target])?;
+                self.workbench.plan_investigation_step(
+                    text(&record, "id"), job,
+                    "Inspect the explicit Ethereum seed; provider observations do not establish identity or criminality.", None,
+                )?;
+                self.filter.clear();
+                self.change_view(View::Investigations.index());
+                self.refresh();
+                if let Some(index) = self
+                    .records()
+                    .iter()
+                    .position(|row| row["id"] == record["id"])
+                {
+                    self.selected[View::Investigations.index()] = index;
+                }
+                self.notice("Crypto plan saved locally; nothing collected. Enter selects its step; g runs bounded Blockscout collection (up to two requests). G explores source observations; r reviews findings.", false);
+            }
             FormAction::InvestigationReview {
                 investigation_id,
                 finding_id,
@@ -2000,9 +2060,9 @@ impl Ui {
         if area.width < 55 || area.height < 15 {
             frame.render_widget(
                 Paragraph::new(
-                    "Fieldkit needs at least 55 columns × 15 rows.\nResize the terminal; q quits.",
+                    "Nightjar needs at least 55 columns × 15 rows.\nResize the terminal; q quits.",
                 )
-                .block(Block::bordered().title(" Fieldkit ")),
+                .block(Block::bordered().title(" Nightjar ")),
                 area,
             );
             return;
@@ -2061,7 +2121,7 @@ impl Ui {
         let lines = vec![
             Line::from(vec![
                 Span::styled(
-                    " FIELDKIT ",
+                    " NIGHTJAR ",
                     Style::default()
                         .bg(ACCENT)
                         .fg(Color::Black)
@@ -2159,7 +2219,7 @@ impl Ui {
             .split(area);
             let records = self.records();
             let title = if self.view == View::Investigations {
-                "Investigations · d new · Enter children"
+                "Investigations · d Telegram · C crypto"
             } else if self.view == View::Discovery {
                 "Discovery sessions · g run/resume"
             } else {
@@ -2686,7 +2746,7 @@ impl Ui {
             ));
             prelude
         } else if self.view == View::Investigations {
-            "Press d to create a Telegram investigation question with an optional archive query. Ctrl+S saves locally; Enter only moves between fields.\n\nAfter saving, Enter selects steps/findings. g runs one selected step in the background. Findings remain pending_review until a local human explicitly accepts or rejects them with r and Ctrl+S. Only accepted findings enter the summary.\n\nArchive coverage is historical, incomplete and not direct Telegram verification. Citations preserve source context; account matches do not establish identity or ownership.".into()
+            "Press d for a Telegram question or uppercase C for Crypto Forensics. Ctrl+S saves locally; Enter only moves between fields. Crypto starts with one explicit Ethereum address or transaction; nothing is fetched until you select a step and press g. That request sends the target to Blockscout.\n\nAfter saving, Enter selects steps/findings. g runs one selected step in the background. Findings remain pending_review until a local human explicitly accepts or rejects them with r and Ctrl+S. Only accepted findings enter the summary.\n\nCoverage is bounded and incomplete, not a full transaction history or live Telegram monitoring. Account matches and provider labels do not establish identity, ownership or criminality.".into()
         } else if self.view == View::Reasoning {
             let provider = self
                 .provider_status
@@ -2713,7 +2773,7 @@ impl Ui {
         let keys = if self.view == View::Graph {
             "j/k select  Enter follow  Backspace back  ← nodes  → edges  o evidence  / search"
         } else if self.view == View::Investigations {
-            "d new question  Enter children  g run step  r review finding  o citations  G graph"
+            "d Telegram  C crypto  Enter children  g run step  r review  o citations  G graph"
         } else if self.view == View::Discovery {
             "d new  m planner  g run/resume  p pause  b reasoning  z NVIDIA status"
         } else if self.view == View::Reasoning {
@@ -2843,7 +2903,7 @@ impl Ui {
                 .block(
                     Block::bordered()
                         .border_style(Style::default().fg(ACCENT))
-                        .title(" Fieldkit investigation guide · ↑↓ scroll · Esc close "),
+                        .title(" Nightjar investigation guide · ↑↓ scroll · Esc close "),
                 ),
             area,
         );
@@ -2941,6 +3001,9 @@ fn record_summary(record: &Value) -> String {
 }
 
 const HELP: &str = "\
+CRYPTO FORENSICS\n\
+C (uppercase) opens a local Ethereum plan from any view. Enter a natural-language question and one ethereum:0x address (40 hex digits) or transaction hash (64 hex digits). Ctrl+S saves one pending step without network/model access. w opens shared Investigations; Enter selects its step; g runs bounded public collection against Blockscout (up to two requests), never a retry or automatic follow-up. G explores preserved source-backed relations; o opens citations; r reviews findings. External agents can plan exact evidence-backed pivots through MCP.\n\
+Ethereum only initially. Raw native values are decimal wei strings, not fiat or token valuations. Transaction roles do not establish a successful value transfer, identity, ownership or criminality. Coverage is incomplete and provider denial is not an empty history. Provider labels stay unverified; no paid or sensitive lookup integrations are enabled.\n\n\
 TELEGRAM INVESTIGATIONS\n\
 w  Open Investigations. d creates a question with an optional archive query, since/until dates and result limit. No model or provider selection is required. Ctrl+S saves locally without network access; Enter only changes fields. Blank query saves a question without collection steps.\n\
 Enter switches between investigations and their steps, followed by findings. g runs only the selected step in the background, never the whole plan. Archive results are historical third-party observations, not complete/live coverage or direct Telegram verification.\n\
@@ -3274,7 +3337,7 @@ mod tests {
         for (width, height) in [(120, 36), (100, 30), (80, 24)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal.draw(|frame| ui.draw(frame)).unwrap();
-            assert!(buffer_text(&terminal).contains("FIELDKIT"));
+            assert!(buffer_text(&terminal).contains("NIGHTJAR"));
             assert!(buffer_text(&terminal).contains("Discovery"));
             ui.discovery_form();
             terminal.draw(|frame| ui.draw(frame)).unwrap();
@@ -3349,6 +3412,66 @@ mod tests {
         let reopened = Workbench::new(directory.path().join("case"), Config::default()).unwrap();
         assert_eq!(reopened.investigations().unwrap().len(), 1);
         assert!(reopened.store.reports(10).unwrap().is_empty());
+    }
+    #[test]
+    fn crypto_plan_requires_explicit_save_and_stays_offline() {
+        for (length, command) in [(40, "evm-address"), (64, "evm-transaction")] {
+            let (directory, mut ui) = ui();
+            ui.key(press(KeyCode::Char('C')));
+            let Some(Modal::Form(form)) = &mut ui.modal else {
+                panic!("crypto form")
+            };
+            assert_eq!(form.fields.len(), 2);
+            let target = format!("ethereum:0x{}", "a".repeat(length));
+            form.fields[0].value = "What is directly observable for this Ethereum seed?".into();
+            form.fields[1].value = target.clone();
+            ui.key(press(KeyCode::Enter));
+            assert!(ui.workbench.investigations().unwrap().is_empty());
+            ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+            assert!(ui.modal.is_none());
+            assert!(ui.worker.is_none());
+            assert_eq!(ui.view, View::Investigations);
+            let record = ui.selected_investigation().unwrap();
+            assert_eq!(record["mode"], "crypto");
+            assert_eq!(record["seeds"], json!([target]));
+            assert_eq!(record["steps"].as_array().unwrap().len(), 1);
+            assert_eq!(record["steps"][0]["command"], command);
+            assert_eq!(record["steps"][0]["status"], "pending");
+            assert!(record["steps"][0]["run_id"].is_null());
+            assert!(record["findings"].as_array().unwrap().is_empty());
+            ui.key(press(KeyCode::Char('g')));
+            assert!(ui.worker.is_none(), "parent selection cannot collect");
+            let reopened =
+                Workbench::new(directory.path().join("case"), Config::default()).unwrap();
+            assert_eq!(reopened.investigations().unwrap().len(), 1);
+            assert!(reopened.store.reports(10).unwrap().is_empty());
+        }
+    }
+    #[test]
+    fn crypto_invalid_or_cancelled_form_never_creates_a_plan() {
+        let (_directory, mut ui) = ui();
+        ui.crypto_investigation_form();
+        let Some(Modal::Form(mut form)) = ui.modal.take() else {
+            panic!("crypto form")
+        };
+        assert!(ui.submit(&form).is_err());
+        form.fields[0].value = "Inspect this explicit Ethereum seed".into();
+        for target in [
+            "",
+            "0x1234",
+            "solana:sample",
+            "ethereum:0xnot-hex",
+            "https://example.org",
+        ] {
+            form.fields[1].value = target.into();
+            assert!(ui.submit(&form).is_err(), "invalid: {target}");
+            assert!(ui.workbench.investigations().unwrap().is_empty());
+        }
+        ui.crypto_investigation_form();
+        ui.key(press(KeyCode::Esc));
+        assert!(ui.modal.is_none());
+        assert!(ui.worker.is_none());
+        assert!(ui.workbench.store.reports(10).unwrap().is_empty());
     }
     #[test]
     fn investigation_question_only_and_search_validation_are_local() {

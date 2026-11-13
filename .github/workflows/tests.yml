@@ -25,32 +25,27 @@ jobs:
           node-version: '24'
       - name: Install stable Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxi-dev libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev
       - name: Check formatting
         run: cargo +stable fmt --all -- --check
-      - name: Lint native runtime
-        run: cargo +stable clippy --locked --all-targets -- -D warnings
-      - name: Test collectors and investigation workflows
-        run: cargo +stable test --locked
+      - name: Lint Rust workspace
+        run: cargo +stable clippy --workspace --locked --all-targets -- -D warnings
+      - name: Build runtime, desktop, agent and benchmark tools
+        run: cargo +stable build --workspace --release --locked
+      - name: Test collectors, agents and offline benchmark workflows
+        env:
+          FIELDKIT_TEST_BINARY: ${{ github.workspace }}/target/release/fieldkit
+        run: cargo +stable test --workspace --locked
       - name: Browser workflow checks
         run: node tests/frontend_test.mjs
       - name: NVIDIA setup and compilation control contracts
         run: |
           sh -n integrations/auto-ontology/setup.sh
           node --test integrations/auto-ontology/bootstrap-token.test.mjs integrations/auto-ontology/semantic-control.test.mjs integrations/auto-ontology/setup-cleanup.test.mjs
-      - name: Build standalone runtime
-        run: cargo +stable build --release --locked
-      - name: Install Python for optional agent integration tests
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Historical replay scorer regressions (offline)
-        run: make test-historical-replay
-      - name: Public-source reconstruction regressions (offline)
-        run: make test-source-reconstruction
-      - name: Inkling agent contracts and synthetic benchmark replay (no provider key)
-        env:
-          FIELDKIT_TEST_BINARY: target/release/fieldkit
-        run: make test-inkling
+      - name: Synthetic agent benchmark replay (no provider key)
+        run: cargo +stable run --release --locked -p fieldkit-agent --bin fieldkit-agent-benchmark -- --mode replay
       - name: Check entry points
         run: |
           ./target/release/fieldkit doctor

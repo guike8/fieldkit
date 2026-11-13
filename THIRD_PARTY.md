@@ -16,6 +16,14 @@ The native `telegram-search` collector calls [Open Measures](https://openmeasure
 
 The [public API documentation](https://docs.openmeasures.io/docs/guides/public-api) and live [OpenAPI description](https://api.openmeasures.io/openapi.json), checked 2026-11-13, document 39 queries/day and historical content at least six months old. Results are provider-index observations, not authenticated originals, complete Telegram coverage, account ownership or identity attribution. These limits can change; access failures and rate limits remain visible. Captured API responses preserve provenance but their hashes do not certify source truth. Tests use synthetic records, not captured third-party posts.
 
+## Nightjar desktop and branding
+
+The optional desktop uses [eframe/egui](https://github.com/emilk/egui), [tiny-skia](https://github.com/linebender/tiny-skia) for first-party vector artwork, and macOS-only [tray-icon](https://github.com/tauri-apps/tray-icon) / [muda](https://github.com/tauri-apps/muda) with objc2 Cocoa bindings for the status menu. Cargo.lock pins these dependencies. They are not required by a terminal-only build. Dependency licenses and notices apply separately; no icon artwork was imported from those projects.
+
+## Ethereum Blockscout API
+
+The native crypto collectors call the fixed Ethereum mainnet [Blockscout explorer](https://eth.blockscout.com/) v2 API. [Blockscout REST documentation](https://docs.blockscout.com/devs/apis/rest) describes the provider interface. This is a data API integration, not vendored explorer code or an independently verified Ethereum node. Requests disclose the explicit target to that provider, and captured responses retain their own content rights and provenance. Service access can be denied, changed or retired; there is no automatic paid gateway/fallback. Tests use synthetic responses, not live wallet acquisition. See [Crypto Forensics](CRYPTO_FORENSICS.md) for limits and interpretation policy.
+
 ## Historical dependencies
 
 The earlier Python/C++ implementations are archived under `legacy/`. Their code retains notices for the MCP Python SDK, Beautiful Soup, JSON for Modern C++, and libcurl. See [legacy/native/handlecheck/THIRD_PARTY.md](legacy/native/handlecheck/THIRD_PARTY.md). They are not current runtime dependencies.

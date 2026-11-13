@@ -1,3 +1,8 @@
+[workspace]
+members = [".", "apps/nightjar", "crates/nightjar-brand", "benchmarks/runner", "integrations/inkling", "xtask"]
+default-members = ["."]
+resolver = "3"
+
 [package]
 name = "fieldkit"
 version = "0.6.0"

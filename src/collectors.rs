@@ -10,6 +10,7 @@ use std::{
 };
 use url::Url;
 
+mod crypto;
 mod infra;
 mod local;
 mod people;
@@ -18,6 +19,8 @@ mod telegram_search;
 mod web;
 
 pub const COMMANDS: &[&str] = &[
+    "evm-address",
+    "evm-transaction",
     "username",
     "person",
     "profile",
@@ -479,7 +482,7 @@ pub fn validate_job(job: &Job) -> Result<()> {
     let allowed: &[&str] = match job.command.as_str() {
         "username" => &["sites", "include_candidates"],
         "person" => &["context", "search"],
-        "search" => &["limit"],
+        "search" | "evm-address" => &["limit"],
         "archive" => &["limit", "prefix"],
         "dns" => &["types"],
         "rdap" => &["kind"],
@@ -525,15 +528,25 @@ pub fn validate_job(job: &Job) -> Result<()> {
             ));
         }
     }
+    if matches!(job.command.as_str(), "evm-address" | "evm-transaction") {
+        crypto::validate(&job.command, job.target.as_deref().unwrap_or(""))?;
+    }
     if job.command == "telegram-search" {
         telegram_search::validate(job.target.as_deref().unwrap_or(""), &job.options)?;
     }
     Ok(())
 }
 
+/// Validate an explicitly Ethereum-qualified address or transaction seed without network access.
+pub fn validate_crypto_target(target: &str) -> Result<()> {
+    crypto::validate_seed(target)
+}
+
 fn descriptors() -> Vec<Value> {
-    serde_json::from_str(include_str!("collectors/catalog.json"))
-        .expect("bundled collector schemas")
+    let mut commands: Vec<Value> = serde_json::from_str(include_str!("collectors/catalog.json"))
+        .expect("bundled collector schemas");
+    commands.extend(crypto::descriptors());
+    commands
 }
 pub fn command_schema(command: &str) -> Value {
     descriptors()
@@ -670,6 +683,7 @@ fn dispatch(ctx: &mut Context<'_>, job: &Job) -> Result<Payload> {
     let target = job.target.as_deref().unwrap_or("");
     let options = &job.options;
     match job.command.as_str() {
+        "evm-address" | "evm-transaction" => crypto::collect(ctx, &job.command, target, options),
         "username" => people::username(ctx, target, options),
         "profile" => people::profile(ctx, target),
         "person" => people::person(ctx, target, options),
@@ -701,7 +715,7 @@ fn dispatch(ctx: &mut Context<'_>, job: &Job) -> Result<Payload> {
 }
 
 pub fn capabilities() -> Value {
-    json!({"name":"fieldkit","version":env!("CARGO_PKG_VERSION"),"runtime":"rust","schema_version":"1.0","commands":descriptors(),"people_sources":people::catalog(),"optional_providers":{"brave_search":{"configured":std::env::var_os("BRAVE_SEARCH_API_KEY").is_some(),"key_environment_variable":"BRAVE_SEARCH_API_KEY"}},
+    json!({"name":"fieldkit","version":env!("CARGO_PKG_VERSION"),"runtime":"rust","schema_version":"1.0","commands":descriptors(),"crypto":crypto::coverage(),"people_sources":people::catalog(),"optional_providers":{"brave_search":{"configured":std::env::var_os("BRAVE_SEARCH_API_KEY").is_some(),"key_environment_variable":"BRAVE_SEARCH_API_KEY"}},
         "orchestration":{"run":"fieldkit --case DIR run JOB.json","batch":"fieldkit --case DIR batch JOBS.jsonl","mcp":"fieldkit --case CASE mcp --workspace DIRECTORY","tui":"fieldkit tui --case CASE","app":"fieldkit --case CASE app --workspace DIRECTORY","discovery":"fieldkit --case CASE discover SEED --kind username --jobs 12 --depth 2","ontology":"fieldkit --case CASE ontology --sync"},
         "discovery":{"seed_kinds":["username","profile","url","domain","search"],"max_jobs":100,"max_depth":4,"persistent_budget":true,"planners":["local","nvidia"],"max_reasoning_budget":20,"strategy":"Explicit observed profiles and links; optional NVIDIA reasoning chooses or proposes cited public collectors; search is opt-in","pause":"TUI p stops NVIDIA reasoning promptly or pauses after the active collector; g resumes pending work","nvidia_unavailable":"Pause visibly; never silently fall back to local ranking"},
         "ontology":{"provider":"fieldkit_structured_evidence","versioned_vocabulary":true,"claims":"Preserved report pointers, hashes and source references","nvidia_service_integrated":true,"nvidia_semantic_catalog":"Separate normalized read-only SQLite datasource; compiled by the actual NVIDIA service","model_assessments":"Retained separately from source facts and excluded from future evidence projections"},

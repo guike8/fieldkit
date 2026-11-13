@@ -18,7 +18,39 @@ pub const RECON_COLLECTORS: &[&str] = &[
     "telegram-profile",
     "telegram-messages",
     "telegram-post",
+    "evm-address",
+    "evm-transaction",
 ];
+
+fn recon_mode(mode: &str) -> bool {
+    ["person", "organization", "infrastructure", "crypto"].contains(&mode)
+}
+
+fn crypto_collector(command: &str) -> bool {
+    ["evm-address", "evm-transaction"].contains(&command)
+}
+
+fn mode_allows(mode: &str, command: &str) -> bool {
+    if mode == "crypto" {
+        crypto_collector(command)
+    } else {
+        !crypto_collector(command) && external_collector(command)
+    }
+}
+
+fn crypto_lead_pointer(pointer: &str) -> bool {
+    if pointer == "/data/address/target" {
+        return true;
+    }
+    let parts = pointer.split('/').collect::<Vec<_>>();
+    parts.len() == 5
+        && parts[1] == "data"
+        && parts[2] == "transactions"
+        && parts[3]
+            .parse::<usize>()
+            .is_ok_and(|index| parts[3] == index.to_string())
+        && ["target", "from_target", "to_target"].contains(&parts[4])
+}
 
 fn external_collector(command: &str) -> bool {
     RECON_COLLECTORS.contains(&command) || command == "telegram-search"
@@ -65,10 +97,7 @@ impl Workbench {
         seeds: Vec<String>,
     ) -> Result<Value> {
         bounded(question, 4000)?;
-        ensure!(
-            ["person", "organization", "infrastructure"].contains(&mode),
-            "Unknown recon mode"
-        );
+        ensure!(recon_mode(mode), "Unknown recon mode");
         ensure!(
             !seeds.is_empty() && seeds.len() <= 5,
             "Supply 1–5 user-scoped seeds"
@@ -79,8 +108,11 @@ impl Workbench {
                 !seed.chars().any(char::is_control),
                 "Seeds cannot contain control characters"
             );
+            if mode == "crypto" {
+                collectors::validate_crypto_target(seed)?;
+            }
         }
-        let record = json!({"id":id("investigation"),"title":question.chars().take(160).collect::<String>(),"question":question,"mode":mode,"platform":"public_sources","seeds":seeds,"steps":[],"created_at":now(),"coverage":"Bounded public-source recon, not comprehensive surveillance. Source observations and candidate associations do not establish identity or ownership.","review_policy":"All analytical findings require local human review; proposals are not source evidence"});
+        let record = json!({"id":id("investigation"),"title":question.chars().take(160).collect::<String>(),"question":question,"mode":mode,"platform":"public_sources","seeds":seeds,"steps":[],"created_at":now(),"coverage":if mode == "crypto" { "Bounded Ethereum mainnet outer transaction observations from Blockscout; one page, no retries. Provider availability is unverified and public instance APIs may be retired or denied. No complete history, token/internal transfers, finality, identity, ownership or proof of funds transferred." } else { "Bounded public-source recon, not comprehensive surveillance. Source observations and candidate associations do not establish identity or ownership." },"review_policy":"All analytical findings require local human review; proposals are not source evidence"});
         self.store.put("investigations", &record)?;
         self.store.event(
             "investigation.created",
@@ -105,6 +137,16 @@ impl Workbench {
                 "Lead pointer must select an exact observed data string"
             );
             let report = self.investigation_evidence(identifier, text(lead, "step_id"))?;
+            ensure!(
+                mode_allows(text(record, "mode"), text(&report, "command")),
+                "Capture is not allowed in this investigation mode"
+            );
+            if record["mode"] == "crypto" {
+                ensure!(
+                    crypto_lead_pointer(pointer),
+                    "Crypto leads must select normalized source-bound hash targets, never provider labels or synthesized links"
+                );
+            }
             ensure!(
                 external_collector(text(&report, "command"))
                     && ["ok", "partial"].contains(&text(&report, "status")),
@@ -158,9 +200,14 @@ impl Workbench {
         let _lock = self.investigation_lock(identifier)?;
         let mut record = self.store.get("investigations", identifier)?;
         ensure!(
-            ["person", "organization", "infrastructure"].contains(&text(&record, "mode")),
+            recon_mode(text(&record, "mode")),
             "Plan recon steps in a recon investigation"
         );
+        ensure!(
+            mode_allows(text(&record, "mode"), &job.command),
+            "Collector is not allowed in this investigation mode"
+        );
+        let crypto = record["mode"] == "crypto";
         let grounding = self.recon_grounding(identifier, &record, target, lead.as_ref())?;
         let steps = record["steps"]
             .as_array_mut()
@@ -171,8 +218,11 @@ impl Workbench {
         );
         ensure!(
             !steps.iter().any(|s| s["command"] == job.command
-                && s["target"] == target
-                && s["options"] == job.options),
+                && if crypto {
+                    text(s, "target").eq_ignore_ascii_case(target)
+                } else {
+                    s["target"] == target && s["options"] == job.options
+                }),
             "Job already planned or attempted; no automatic retries"
         );
         let step = json!({"id":id("step"),"command":job.command,"target":target,"options":job.options,"status":"pending","run_id":null,"error":null,"rationale":rationale,"grounding":grounding,"planned_at":now()});
@@ -253,8 +303,12 @@ impl Workbench {
             external_collector(&job.command),
             "Unsupported investigation collector"
         );
+        ensure!(
+            mode_allows(text(&record, "mode"), &job.command),
+            "Collector is not allowed in this investigation mode"
+        );
         collectors::validate_job(&job)?;
-        if ["person", "organization", "infrastructure"].contains(&text(&record, "mode")) {
+        if recon_mode(text(&record, "mode")) {
             let grounding = &step["grounding"];
             let lead = (grounding["origin"] == "observed_lead_not_identity").then_some(grounding);
             ensure!(
@@ -395,6 +449,29 @@ impl Workbench {
             "Only preserved external recon captures can be attached"
         );
         ensure!(
+            mode_allows(text(&record, "mode"), text(&report, "command")),
+            "Capture is not allowed in this investigation mode"
+        );
+        if record["mode"] == "crypto" {
+            // Attachment has no explicit lead argument: it may only attach an original
+            // scoped seed. Further pivots must use plan + exact same-investigation lead.
+            self.recon_grounding(identifier, &record, text(&report, "target"), None)?;
+            collectors::validate_job(&Job {
+                command: text(&report, "command").into(),
+                target: Some(text(&report, "target").into()),
+                options: json!({}),
+            })?;
+            ensure!(
+                !record["steps"]
+                    .as_array()
+                    .context("Malformed investigation")?
+                    .iter()
+                    .any(|s| s["command"] == report["command"]
+                        && text(s, "target").eq_ignore_ascii_case(text(&report, "target"))),
+                "Job already planned or attempted; no retries through attachments"
+            );
+        }
+        ensure!(
             ["ok", "partial"].contains(&text(&report, "status")),
             "Attach an observed result, not a failed/absent capture"
         );
@@ -418,9 +495,11 @@ impl Workbench {
         );
         let step = json!({"id":id("step"),"command":report["command"],"target":report["target"],"options":{},"status":report["status"],"run_id":run_id,"error":report["errors"],"attached_at":now(),"origin":"preserved_case_capture","report_sha256":self.store.report_hash(run_id)?});
         steps.push(step.clone());
-        record["coverage"] = json!(
-            "Bounded preserved external captures; archive results are historical third-party leads and public pages may be unavailable or changed. No complete coverage or identity attribution."
-        );
+        if record["mode"] != "crypto" {
+            record["coverage"] = json!(
+                "Bounded preserved external captures; archive results are historical third-party leads and public pages may be unavailable or changed. No complete coverage or identity attribution."
+            );
+        }
         self.store.put("investigations", &record)?;
         self.store.event(
             "investigation.capture_attached",
@@ -457,9 +536,12 @@ impl Workbench {
         };
         collectors::validate_job(&job)?;
         let mut record = self.store.get("investigations", identifier)?;
-        let grounding =
-            if ["person", "organization", "infrastructure"].contains(&text(&record, "mode")) {
-                Some(self.recon_grounding(
+        ensure!(
+            mode_allows(text(&record, "mode"), &job.command),
+            "Collector is not allowed in this investigation mode"
+        );
+        let grounding = if recon_mode(text(&record, "mode")) {
+            Some(self.recon_grounding(
                 identifier,
                 &record,
                 target,
@@ -467,9 +549,9 @@ impl Workbench {
                     &json!({"step_id":search_step,"pointer":format!("/data/messages/{index}/url")}),
                 ),
             )?)
-            } else {
-                None
-            };
+        } else {
+            None
+        };
         let steps = record["steps"]
             .as_array_mut()
             .context("Malformed investigation")?;
@@ -624,6 +706,9 @@ impl Workbench {
         let scope = match text(&report, "command") {
             "http" if byte_range.is_some() => {
                 "http_original_text_byte_range_not_execution_or_attribution"
+            }
+            "evm-address" | "evm-transaction" => {
+                "ethereum_provider_observation_not_transfer_finality_identity_or_ownership"
             }
             "telegram-search" => "provider_archive_observation_not_direct_verification",
             "http" if citation["source_id"].is_string() => {

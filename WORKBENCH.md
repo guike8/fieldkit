@@ -18,6 +18,14 @@ An agent can call `fieldkit_graph_focus` to bring a source-backed neighborhood i
 
 Graph edges mean **attributed source observations**, not verified ownership. Matching handles and different typed representations stay distinct; candidate correlations, analyst links, model assessments and investigation proposals do not become observed graph edges. Legacy claim reviews are labeled separately from local investigation approval. The case graph covers the latest 500 reports and states its limitations; keep the whole case for older captures. Hashes prove retained bytes, not source truth.
 
+## Crypto Forensics: Ask → Explore → Review
+
+Press **C** (uppercase, from any view) to enter a question and one explicit `ethereum:0x…` address or transaction. **Ctrl+S** saves a local crypto investigation with one pending seed step; Enter alone does not save. No provider/model call occurs on opening or saving. Addresses have 40 hex digits; transaction hashes have 64. Unsupported chains and invalid seeds fail locally.
+
+In **w:Investigations**, **Enter** selects the child step and **g** attempts it once, sending the target to Ethereum Blockscout (up to two requests for an address, one for a transaction). There is no automatic pagination, retry or follow-up. An external MCP agent can plan further steps from exact retained chain-qualified leads, within ten total steps. **G** explores source observations, **o** inspects citations and **r** opens deliberate finding review. A pending/failed transaction's roles do not prove value moved. Provider labels do not prove identity, ownership or criminality.
+
+This is initial Ethereum support, not multichain/bridge tracing or a full wallet history. No toolkit subscriptions or sensitive lookup services are activated. See [Crypto Forensics](CRYPTO_FORENSICS.md).
+
 ## Telegram question → cited findings
 
 The main entry is an agent chat connected to Fieldkit MCP: ask a question in ordinary language. The agent saves the question, derives bounded historical searches, inspects results, selects exact public-post captures, and drafts cited findings. No model-provider configuration is added inside Fieldkit.
@@ -100,6 +108,7 @@ Press `n` to add a note linked to selected evidence or claim citations. Record a
 | --- | --- |
 | `G` | Relationship graph; Enter follows a neighbor, Backspace returns, `o` opens evidence |
 | `w` | Shared investigations; `d` Telegram plan, `g` run selected step, `r` review selected finding |
+| `C` | Create a local Crypto Forensics plan from an Ethereum seed; no collection |
 | `d` / `g` / `p` | Plan discovery / run-resume / pause |
 | `m` / `b` / `z` | Configure selected planner / Reasoning view / NVIDIA readiness |
 | `Tab` / `Shift+Tab` | Next / previous view |

@@ -1,0 +1,31 @@
+[package]
+name = "fieldkit-agent"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "fieldkit_agent"
+
+[[bin]]
+name = "fieldkit-agent"
+path = "src/bin/fieldkit-agent.rs"
+
+[[bin]]
+name = "fieldkit-agent-benchmark"
+path = "src/bin/fieldkit-agent-benchmark.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+url = "2"
+regex = "1"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tiny_http = "0.12"

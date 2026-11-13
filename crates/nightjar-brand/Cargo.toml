@@ -1,0 +1,8 @@
+[package]
+name = "nightjar-brand"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
