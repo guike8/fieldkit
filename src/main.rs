@@ -410,6 +410,31 @@ mod tests {
         assert_eq!(j.options["include_candidates"], false);
     }
     #[test]
+    fn parses_telegram_archive_search_dates_and_boolean_mode() {
+        let job = collector_job(
+            [
+                "telegram-search",
+                "research AND reports",
+                "--since",
+                "2024-01-01",
+                "--until=2024-02-01",
+                "--query-type",
+                "boolean_content",
+                "--limit",
+                "5",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        )
+        .unwrap();
+        assert_eq!(job.target.as_deref(), Some("research AND reports"));
+        assert_eq!(
+            job.options,
+            json!({"since":"2024-01-01","until":"2024-02-01","query_type":"boolean_content","limit":5})
+        );
+    }
+    #[test]
     fn rejects_extra_targets() {
         assert!(collector_job(vec!["username".into(), "a".into(), "b".into()]).is_err());
     }

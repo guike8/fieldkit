@@ -79,10 +79,25 @@ The MCP server exposes every collector plus shared case, flow, discovery, ontolo
 - People: `username`, `profile`, `person`, optional Brave `search`.
 - Public infrastructure: `dns`, `rdap`, `tls`, `ct`, `http`, `archive`, `email`, composed `domain`.
 - Local sources: `file`, `extract`, `telegram-export`.
-- Telegram: `telegram-profile`, `telegram-messages`, `telegram-post`, `bellingcat-telegram`.
+- Telegram: historical-index `telegram-search`, public `telegram-profile`, `telegram-messages`, `telegram-post`, `bellingcat-telegram`.
 - Diagnostics: `doctor`, `integrations`.
 
 Username adapters cover GitHub, GitLab, Codeberg, DEV, Lichess, Chess.com, Hugging Face, Hacker News, Reddit, Bluesky, Mastodon, Steam, and YouTube. Provider-specific identity/schema checks and fresh negative controls gate a `found` result. Other platform URLs remain unverified candidates. Public visibility, access restrictions, rate limits, and provider changes remain visible in results.
+
+## Telegram topic discovery (historical archive)
+
+```sh
+fieldkit --case cases/example telegram-search "bellingcat" --since 2024-01-01 --until 2024-02-01 --limit 10
+fieldkit --case cases/example run examples/telegram-search.json
+```
+
+`telegram-search` queries the [Open Measures public API](https://docs.openmeasures.io/docs/guides/public-api), not Telegram directly. No key is required. The provider documents **39 public queries/day** and **data at least six months old**; this is neither live monitoring nor complete Telegram coverage. Your query is sent to that third party. Each invocation makes one bounded request, with no automatic pagination or retries; the provider enforces the daily quota and HTTP 429 is reported explicitly. Fieldkit caps results at 100 and the global `--max-results` budget (default 50).
+
+Dates accept `YYYY-MM-DD` (UTC midnight) or RFC3339. `since` is inclusive, `until` exclusive; recent or reversed windows are rejected before a network request. Omitted dates default to twelve calendar months ago through six months plus one day ago. `--query-type boolean_content` enables `AND`, `OR`, and `NOT`; default `content` uses the provider's content search.
+
+Raw API response bytes are preserved with hashes and source references when a case is configured. Results retain provider-reported publication/archive times separately from collection time, exact source JSON pointers, and `directly_verified: false`. Public post URLs are graph **search-result leads**, never verified posts or ownership edges. Empty results only describe this index/query/window. Selected URLs can be checked separately with `telegram-post`; agreement does not establish identity or authenticate historical authorship. The connector adds no automatic identity conclusions and does not implement a new approval/role boundary for existing review tools.
+
+Agents use `fieldkit_telegram_search` and the same shared case; the TUI displays its saved evidence. See [MCP.md](MCP.md) for a call example. This connector does not add X collection or require Firecrawl.
 
 ## Local browser app
 

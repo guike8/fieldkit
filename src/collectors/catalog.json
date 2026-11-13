@@ -578,6 +578,44 @@
     }
   },
   {
+    "name": "telegram-search",
+    "description": "Search Open Measures' historical Telegram index: no key, 39 public queries/day, data at least six months old. Results are unverified archive leads, not live or comprehensive coverage. Sends the query to Open Measures; one bounded request, no automatic pagination or retries.",
+    "local_target": false,
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "target"],
+      "properties": {
+        "command": {"const": "telegram-search"},
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Content search query (at most 2048 UTF-8 bytes); sent to the third-party public index, not Telegram. No identity attribution."
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "since": {
+              "type": "string", "minLength": 10, "maxLength": 64,
+              "description": "Inclusive UTC date (YYYY-MM-DD) or RFC3339 timestamp; defaults to twelve calendar months ago."
+            },
+            "until": {
+              "type": "string", "minLength": 10, "maxLength": 64,
+              "description": "Exclusive date or RFC3339 timestamp, at least six calendar months ago; defaults to six months plus one day ago. Date-only values mean UTC midnight. Must follow since."
+            },
+            "query_type": {
+              "type": "string", "enum": ["content", "boolean_content"], "default": "content",
+              "description": "Content search or Boolean content search (AND, OR, NOT). No raw field-query mode."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "telegram-profile",
     "description": "Public Telegram profile/channel metadata from an exact handle or t.me URL",
     "local_target": false,

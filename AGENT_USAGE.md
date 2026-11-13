@@ -30,4 +30,16 @@ The ontology records observed concepts, relationship signatures, and source-attr
 
 The optional NVIDIA planner uses the real Auto Ontology gateway over a separate read-only projection. Configure it through [the local setup](integrations/auto-ontology/README.md) or operator environment variables. NVIDIA recommendations choose existing pending jobs or propose allowed public collectors grounded in exact report pointers and hashes. The cumulative reasoning quota counts questions, including failed/interrupted attempts; collector budgets remain separate. Unavailable or invalid suggestions pause the session. Model assessments are retained for review and excluded from subsequent source-evidence projections. Use `nvidia ask "QUESTION"` for a read-only semantic query; it preserves the public answer but executes no investigation collector.
 
+## Telegram archive discovery
+
+For a Telegram topic question, `telegram-search` can discover historical leads before selecting exact public posts for inspection:
+
+```sh
+fieldkit --case cases/example telegram-search "bellingcat" --since 2024-01-01 --until 2024-02-01 --limit 10
+```
+
+This sends the query to Open Measures' public API. Its documented public limits are 39 queries/day and data at least six months old. Do not use it for recent/live coverage or interpret an empty query as Telegram-wide absence. One request runs per invocation, without automatic retries/pagination; Fieldkit surfaces rate limits rather than tracking a local daily allowance. Use explicit inclusive `since` and exclusive `until` dates for reproducibility. Default window: twelve months ago to six months plus one day ago; optional `query_type` is `content` (default) or `boolean_content`.
+
+Keep `provider_archive_observation`, original source IDs/pointers/hashes, publication time, provider archive time and Fieldkit collection time distinct. Search-result URLs are unverified leads; `telegram-post` can inspect a selected public post separately. Do not infer ownership, authorship, criminal involvement or identity from channel labels, shared URLs or matching handles. Seek human approval before proposing identity-related conclusions; this connector itself emits none and does not add permission separation to existing case-review tools.
+
 Run `fieldkit tui --case cases/example` to inspect the same state. See [WORKBENCH.md](WORKBENCH.md) for keys and [MCP.md](MCP.md) for agent tool names and configuration. The browser backend is native Rust too: `fieldkit --case cases/example app --workspace "$PWD"`.

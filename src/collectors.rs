@@ -14,6 +14,7 @@ mod infra;
 mod local;
 mod people;
 mod telegram;
+mod telegram_search;
 mod web;
 
 pub const COMMANDS: &[&str] = &[
@@ -33,6 +34,7 @@ pub const COMMANDS: &[&str] = &[
     "domain",
     "doctor",
     "integrations",
+    "telegram-search",
     "telegram-profile",
     "telegram-messages",
     "telegram-post",
@@ -484,6 +486,7 @@ pub fn validate_job(job: &Job) -> Result<()> {
         "tls" => &["port"],
         "extract" => &["kinds"],
         "domain" => &["modules"],
+        "telegram-search" => &["limit", "since", "until", "query_type"],
         "telegram-messages" => &["limit", "before", "query"],
         "telegram-export" => &["limit", "query"],
         "bellingcat-telegram" => &["download_media", "max_media"],
@@ -521,6 +524,9 @@ pub fn validate_job(job: &Job) -> Result<()> {
                 format!("Invalid value for {key}"),
             ));
         }
+    }
+    if job.command == "telegram-search" {
+        telegram_search::validate(job.target.as_deref().unwrap_or(""), &job.options)?;
     }
     Ok(())
 }
@@ -678,6 +684,7 @@ fn dispatch(ctx: &mut Context<'_>, job: &Job) -> Result<Payload> {
         "domain" => infra::domain(ctx, target, options),
         "file" => local::file(ctx, target),
         "extract" => local::extract(ctx, target, options),
+        "telegram-search" => telegram_search::collect(ctx, target, options),
         "telegram-profile"
         | "telegram-messages"
         | "telegram-post"
@@ -687,7 +694,7 @@ fn dispatch(ctx: &mut Context<'_>, job: &Job) -> Result<Payload> {
             json!({"runtime":"rust","version":env!("CARGO_PKG_VERSION"),"network_checks_run":false,"brave_search_configured":std::env::var_os("BRAVE_SEARCH_API_KEY").is_some(),"native_collectors":true}),
         )),
         "integrations" => Ok(Payload::new(
-            json!({"bellingcat_auto_archiver":{"supported":true,"implementation":"Rust port of bounded public Telegram extraction","upstream":"https://github.com/bellingcat/auto-archiver","license":"MIT","scope":"public previews and exact post embeds"},"nvidia_auto_ontology":{"role":"Actual authenticated NVIDIA semantic service over a separate read-only evidence projection","integrated":true,"service_required":true,"setup":"integrations/auto-ontology/README.md","readiness":"fieldkit nvidia status","planning":"fieldkit discover SEED --planner nvidia --reasoning-budget 5"}}),
+            json!({"open_measures":{"supported":true,"collector":"telegram-search","endpoint":"https://api.openmeasures.io/content","credential_required":false,"coverage":"Third-party historical Telegram index, not live or comprehensive coverage","minimum_age_months":6,"public_requests_per_day":39,"quota_enforced_by":"provider","automatic_pagination":false,"directly_verified":false},"bellingcat_auto_archiver":{"supported":true,"implementation":"Rust port of bounded public Telegram extraction","upstream":"https://github.com/bellingcat/auto-archiver","license":"MIT","scope":"public previews and exact post embeds"},"nvidia_auto_ontology":{"role":"Actual authenticated NVIDIA semantic service over a separate read-only evidence projection","integrated":true,"service_required":true,"setup":"integrations/auto-ontology/README.md","readiness":"fieldkit nvidia status","planning":"fieldkit discover SEED --planner nvidia --reasoning-budget 5"}}),
         )),
         _ => bail!("Unsupported collector"),
     }
@@ -735,6 +742,33 @@ mod tests {
             "https://metadata.internal/",
         ] {
             assert!(public_url(url).is_err(), "{url}");
+        }
+    }
+    #[test]
+    fn telegram_archive_validation_fails_before_any_network_request() {
+        for (target, options) in [
+            ("research", json!({"limit":101})),
+            (
+                "research",
+                json!({"since":"2024-02-01","until":"2024-01-01"}),
+            ),
+            ("research", json!({"until":"2999-01-01"})),
+            ("research", json!({"query_type":"query_string"})),
+            ("research", json!({"endpoint":"https://example.org/"})),
+            ("research\nother", json!({})),
+        ] {
+            let output = collect(
+                &Job {
+                    command: "telegram-search".into(),
+                    target: Some(target.into()),
+                    options,
+                },
+                &Config::default(),
+            )
+            .unwrap();
+            assert_eq!(output.report["status"], "invalid");
+            assert_eq!(output.report["requests"], 0);
+            assert!(output.blobs.is_empty());
         }
     }
     #[test]

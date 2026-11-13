@@ -17,6 +17,16 @@ Transport is newline-delimited JSON-RPC over stdio. Stdout is protocol-only. The
 
 Every collector has a tool named `fieldkit_` plus its command with hyphens replaced by underscores. Tools advertise the same option schemas as the native CLI.
 
+For Telegram historical topic discovery, call `fieldkit_telegram_search` with flattened collector options:
+
+```json
+{"target":"bellingcat","since":"2024-01-01","until":"2024-02-01","limit":10,"query_type":"content"}
+```
+
+The query is sent to Open Measures, not Telegram. The public API requires no key but documents 39 queries/day and data at least six months old. A call makes one bounded request, with no automatic pagination/retries; do not fan out calls assuming an unlimited search backend. `limit` is 1–100, further capped by the server's `--max-results`. Dates are UTC dates or RFC3339, inclusive `since` / exclusive `until`; default window is twelve months ago to six months plus one day ago. `boolean_content` also supports Boolean content queries.
+
+With a configured case, response bytes and reports enter the same evidence ledger used by the TUI. Results are third-party archive observations with `directly_verified: false`, separate publication/archive/collection times and raw-source pointers. Graph URLs are search-result leads, not verified Telegram posts or identity claims. Use `fieldkit_telegram_post` only for selected public-post checks; request human approval before identity interpretations. Existing review tools have no new approval-role enforcement in this connector.
+
 Shared-case tools include `fieldkit_case_workspace`, `fieldkit_case_show`, `fieldkit_case_update`, `fieldkit_case_verify`, `fieldkit_case_export`, evidence capture/review, notes, entities, evidence-backed links, flow planning/execution, correlation generation/review, and:
 
 | Tool | Purpose |

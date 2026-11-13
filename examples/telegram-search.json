@@ -1,0 +1,10 @@
+{
+  "command": "telegram-search",
+  "target": "bellingcat",
+  "options": {
+    "since": "2024-01-01",
+    "until": "2024-02-01",
+    "limit": 10,
+    "query_type": "content"
+  }
+}

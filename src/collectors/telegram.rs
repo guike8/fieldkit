@@ -2,7 +2,10 @@ use super::*;
 use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 
-fn normalize(target: &str, post_required: bool) -> Result<(String, Option<u64>, String)> {
+pub(super) fn normalize(
+    target: &str,
+    post_required: bool,
+) -> Result<(String, Option<u64>, String)> {
     if target.len() > 2048 || target.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(fail(
             "invalid",

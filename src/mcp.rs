@@ -189,10 +189,7 @@ impl Broker {
                 .unwrap_or_default();
             let required_target = !matches!(*command, "doctor" | "integrations");
             if required_target {
-                properties.insert(
-                    "target".into(),
-                    json!({"type":"string","minLength":1,"maxLength":8192}),
-                );
+                properties.insert("target".into(), job_schema["properties"]["target"].clone());
             }
             let description = catalog["commands"]
                 .as_array()
@@ -501,6 +498,33 @@ mod tests {
         )
         .unwrap();
         (directory, broker)
+    }
+    #[test]
+    fn telegram_archive_search_is_exposed_with_bounded_inputs() {
+        let (_directory, broker) = broker();
+        let tool = broker
+            .tools()
+            .into_iter()
+            .find(|tool| tool["name"] == "fieldkit_telegram_search")
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"]["target"]["maxLength"],
+            2048
+        );
+        assert_eq!(tool["inputSchema"]["properties"]["limit"]["maximum"], 100);
+        assert!(tool["description"].as_str().unwrap().contains("six months"));
+        for arguments in [
+            json!({"target":"research","limit":101}),
+            json!({"target":"research","query_type":"query_string"}),
+            json!({"target":"research","since":"2024-02-01","until":"2024-01-01"}),
+            json!({"target":"research","until":"not-a-date"}),
+        ] {
+            assert!(
+                broker
+                    .invoke("fieldkit_telegram_search", &arguments)
+                    .is_err()
+            );
+        }
     }
     #[test]
     fn initialize_negotiates_and_notifications_are_silent() {
