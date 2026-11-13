@@ -259,6 +259,32 @@ impl Store {
         Ok(output)
     }
 
+    pub fn report(&self, run_id: &str) -> Result<Value> {
+        let (body, hash): (String, String) = self.connection()?.query_row(
+            "SELECT result_json,report_sha256 FROM runs WHERE run_id=?1",
+            [run_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        ensure!(
+            digest(body.as_bytes()) == hash,
+            "Stored report has been altered"
+        );
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    pub fn source_bytes(&self, hash: &str) -> Result<Vec<u8>> {
+        ensure!(valid_hash(hash), "Malformed source digest");
+        let path = self.path.join("blobs").join(hash);
+        real(&path, false)?;
+        ensure!(
+            fs::metadata(&path)?.len() <= 32 * 1024 * 1024,
+            "Artifact exceeds limit"
+        );
+        let bytes = fs::read(path)?;
+        ensure!(digest(&bytes) == hash, "Stored artifact hash mismatch");
+        Ok(bytes)
+    }
+
     pub fn report_hash(&self, run_id: &str) -> Result<String> {
         Ok(self.connection()?.query_row(
             "SELECT report_sha256 FROM runs WHERE run_id=?1",

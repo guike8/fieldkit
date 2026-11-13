@@ -35,7 +35,7 @@ use std::{
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
-const VIEWS: [&str; 11] = [
+const VIEWS: [&str; 12] = [
     "Discovery",
     "Ontology",
     "Claims",
@@ -47,6 +47,7 @@ const VIEWS: [&str; 11] = [
     "Notes",
     "Activity",
     "Reasoning",
+    "Investigations",
 ];
 
 /// Restore the terminal on ordinary errors and unwinding, including setup errors.
@@ -95,6 +96,7 @@ enum View {
     Notes,
     Activity,
     Reasoning,
+    Investigations,
 }
 impl View {
     fn index(self) -> usize {
@@ -113,6 +115,7 @@ impl View {
             Self::Notes,
             Self::Activity,
             Self::Reasoning,
+            Self::Investigations,
         ][index % VIEWS.len()]
     }
     fn key(self) -> &'static str {
@@ -128,7 +131,18 @@ impl View {
             Self::Notes => "notes",
             Self::Activity => "activity",
             Self::Reasoning => "reasoning",
+            Self::Investigations => "investigations",
         }
+    }
+    fn shortcut(self) -> String {
+        match self {
+            Self::Reasoning => "b".into(),
+            Self::Investigations => "w".into(),
+            _ => ((self.index() + 1) % 10).to_string(),
+        }
+    }
+    fn has_children(self) -> bool {
+        matches!(self, Self::Discovery | Self::Flows | Self::Investigations)
     }
 }
 
@@ -205,6 +219,11 @@ impl Field {
 
 #[derive(Clone, Debug)]
 enum FormAction {
+    Investigation,
+    InvestigationReview {
+        investigation_id: String,
+        finding_id: String,
+    },
     Discovery,
     Planner(String),
     Collector,
@@ -264,6 +283,7 @@ struct Worker {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WorkerKind {
     Collection,
+    InvestigationStep,
     ProviderStatus,
 }
 
@@ -315,6 +335,12 @@ fn reference_ids(record: &Value) -> Vec<String> {
             }
         }
     }
+    for citation in array(record, "citations") {
+        if let Some(id) = citation["evidence_id"].as_str() {
+            ids.push(id.into());
+        }
+        ids.extend(strings(&citation["evidence_ids"]));
+    }
     ids.sort();
     ids.dedup();
     ids
@@ -352,6 +378,35 @@ fn form_job(form: &Form, start: usize) -> Result<Job> {
             .context("Options must be a JSON object")?,
     })
 }
+fn investigation_searches(form: &Form) -> Result<Vec<Job>> {
+    if form.value(1).is_empty() {
+        if !form.value(2).is_empty() || !form.value(3).is_empty() {
+            bail!("A search query is required when specifying dates");
+        }
+        return Ok(vec![]);
+    }
+    let limit: usize = form
+        .value(4)
+        .parse()
+        .context("Limit must be a whole number")?;
+    if !(1..=100).contains(&limit) {
+        bail!("Limit must be between 1 and 100");
+    }
+    let mut options = json!({"limit": limit});
+    for (index, key) in [(2, "since"), (3, "until")] {
+        if !form.value(index).is_empty() {
+            options[key] = json!(form.value(index));
+        }
+    }
+    let job = Job {
+        command: "telegram-search".into(),
+        target: Some(form.value(1).to_owned()),
+        options,
+    };
+    crate::collectors::validate_job(&job)?;
+    Ok(vec![job])
+}
+
 fn discovery_options(form: &Form) -> Result<DiscoveryOptions> {
     let max_jobs: usize = form
         .value(2)
@@ -575,8 +630,21 @@ impl Ui {
         rows.get(self.selected[View::Flows.index()].min(rows.len().saturating_sub(1)))
             .cloned()
     }
+    fn selected_investigation(&self) -> Option<Value> {
+        let rows = self.filtered(array(&self.data, "investigations"));
+        rows.get(self.selected[View::Investigations.index()].min(rows.len().saturating_sub(1)))
+            .cloned()
+    }
     fn children(&self) -> Vec<Value> {
         match self.view {
+            View::Investigations => self
+                .selected_investigation()
+                .map(|row| {
+                    let mut children = array(&row, "steps");
+                    children.extend(array(&row, "findings"));
+                    children
+                })
+                .unwrap_or_default(),
             View::Discovery => {
                 let Some(session) = self.selected_session() else {
                     return vec![];
@@ -628,7 +696,7 @@ impl Ui {
         self.filtered(rows)
     }
     fn current(&self) -> Option<Value> {
-        let rows = if self.child_focus && matches!(self.view, View::Discovery | View::Flows) {
+        let rows = if self.child_focus && self.view.has_children() {
             self.children()
         } else {
             self.records()
@@ -747,6 +815,10 @@ impl Ui {
                             self.provider_status = Some(report);
                             self.notice(message, warning);
                         }
+                        Ok(report) if kind == WorkerKind::InvestigationStep => {
+                            let (message, warning) = completion_notice(&label, &report);
+                            self.notice(format!("{message} · findings require human review; r reviews a selected finding"), warning);
+                        }
                         Ok(report) => {
                             let (message, warning) = completion_notice(&label, &report);
                             self.notice(message, warning);
@@ -776,6 +848,7 @@ impl Ui {
             KeyCode::Char(ch @ '1'..='9') => self.change_view(ch as usize - '1' as usize),
             KeyCode::Char('0') => self.change_view(9),
             KeyCode::Char('b') => self.change_view(View::Reasoning.index()),
+            KeyCode::Char('w') => self.change_view(View::Investigations.index()),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
             KeyCode::Home => {
@@ -786,7 +859,7 @@ impl Ui {
             KeyCode::End => self.move_selection(isize::MAX),
             KeyCode::PageDown => self.inspector_scroll = self.inspector_scroll.saturating_add(8),
             KeyCode::PageUp => self.inspector_scroll = self.inspector_scroll.saturating_sub(8),
-            KeyCode::Enter if matches!(self.view, View::Discovery | View::Flows) => {
+            KeyCode::Enter if self.view.has_children() => {
                 self.child_focus = !self.child_focus;
                 self.inspector_scroll = 0;
             }
@@ -800,10 +873,22 @@ impl Ui {
                 self.refresh();
                 self.notice("Case refreshed", false);
             }
+            KeyCode::Char('d') if self.view == View::Investigations => self.investigation_form(),
             KeyCode::Char('d') => self.discovery_form(),
             KeyCode::Char('m') => self.planner_form(),
+            KeyCode::Char('g') if self.view == View::Investigations => {
+                self.start_investigation_step()
+            }
             KeyCode::Char('g') => self.start_discovery(),
             KeyCode::Char('z') => self.check_provider(),
+            KeyCode::Char('p')
+                if self
+                    .worker
+                    .as_ref()
+                    .is_some_and(|worker| worker.kind == WorkerKind::InvestigationStep) =>
+            {
+                self.notice("One bounded investigation step is running; it finishes without scheduling further steps.", false);
+            }
             KeyCode::Char('p') => {
                 if let Some(worker) = &self.worker {
                     worker.stop.store(true, Ordering::Relaxed);
@@ -832,6 +917,9 @@ impl Ui {
             KeyCode::Char('n') => self.note_form(),
             KeyCode::Char('f') => self.flow_form(),
             KeyCode::Char('s') => self.step_form(),
+            KeyCode::Char('r') if self.view == View::Investigations => {
+                self.investigation_review_form()
+            }
             KeyCode::Char('r') => self.start_step(),
             KeyCode::Char('v') => self.review_form(),
             KeyCode::Char('c') => self.correlation_form(),
@@ -950,6 +1038,113 @@ impl Ui {
         }
     }
 
+    fn investigation_form(&mut self) {
+        self.modal = Some(Modal::Form(Form::new(
+            "New Telegram investigation · save locally; no collection",
+            FormAction::Investigation,
+            vec![
+                Field::new(
+                    "Question",
+                    "",
+                    "What should the cited evidence support or challenge?",
+                ),
+                Field::new(
+                    "Search query (optional)",
+                    "",
+                    "Blank saves only the question; a query plans one bounded telegram-search step",
+                ),
+                Field::new(
+                    "Since (optional)",
+                    "",
+                    "YYYY-MM-DD or RFC3339; blank uses the archive default (about 12 months ago)",
+                ),
+                Field::new(
+                    "Until (optional)",
+                    "",
+                    "Exclusive YYYY-MM-DD or RFC3339; archive data must be at least six months old",
+                ),
+                Field::new(
+                    "Result limit",
+                    "20",
+                    "1–100 archive results; saving never sends a network request",
+                ),
+            ],
+        )));
+    }
+    fn start_investigation_step(&mut self) {
+        let Some(investigation) = self.selected_investigation() else {
+            self.notice(
+                "Press d to save an investigation question and optional search first.",
+                true,
+            );
+            return;
+        };
+        let steps = array(&investigation, "steps");
+        let Some(step) = steps.get(self.child_selected).filter(|_| self.child_focus) else {
+            self.notice("Enter switches to steps/findings. Select a search step and press g; findings use r for human review.", true);
+            return;
+        };
+        if self.worker.is_some() {
+            self.notice("A worker is already active. Wait for it before running another investigation step.", true);
+            return;
+        }
+        let id = text(&investigation, "id").to_owned();
+        let step_id = text(step, "id").to_owned();
+        self.spawn(
+            format!("Telegram investigation step · {}", text(step, "target")),
+            move |model, _, _| model.run_investigation_step(&id, &step_id),
+        );
+        if let Some(worker) = &mut self.worker {
+            worker.kind = WorkerKind::InvestigationStep;
+        }
+        self.notice("Running one bounded Telegram search step · no automatic follow-ups or finding acceptance", false);
+    }
+    fn investigation_review_form(&mut self) {
+        if self
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.kind == WorkerKind::InvestigationStep)
+        {
+            self.notice(
+                "Wait for the bounded investigation step to finish before saving human review.",
+                true,
+            );
+            return;
+        }
+        let Some(investigation) = self.selected_investigation() else {
+            self.notice("Select an investigation finding to review.", true);
+            return;
+        };
+        let step_count = array(&investigation, "steps").len();
+        let finding = self
+            .child_selected
+            .checked_sub(step_count)
+            .and_then(|index| array(&investigation, "findings").get(index).cloned())
+            .filter(|_| self.child_focus);
+        let Some(finding) = finding else {
+            self.notice("Select a finding in the child table, then press r. Running a step never accepts its findings.", true);
+            return;
+        };
+        self.modal = Some(Modal::Form(Form::new(
+            "Human review · only accepted findings enter the summary",
+            FormAction::InvestigationReview {
+                investigation_id: text(&investigation, "id").to_owned(),
+                finding_id: text(&finding, "id").to_owned(),
+            },
+            vec![
+                Field::new(
+                    "Decision",
+                    "",
+                    "Type accepted or rejected explicitly; inspect citations with o before reviewing",
+                ),
+                Field::new(
+                    "Review rationale",
+                    "",
+                    "Required: explain the evidence, limitations and alternative explanations; identity-sensitive findings need human judgment",
+                ),
+            ],
+        )));
+    }
     fn discovery_form(&mut self) {
         self.modal = Some(Modal::Form(Form::new(
             "Plan discovery · local / NVIDIA reasoning",
@@ -1274,6 +1469,10 @@ impl Ui {
         );
     }
     fn review_form(&mut self) {
+        if self.view == View::Investigations {
+            self.investigation_review_form();
+            return;
+        }
         if self.view == View::Correlations {
             self.correlation_form();
             return;
@@ -1379,6 +1578,39 @@ impl Ui {
 
     fn submit(&mut self, form: &Form) -> Result<()> {
         match &form.action {
+            FormAction::Investigation => {
+                let question = required(form.value(0), "Question")?;
+                let searches = investigation_searches(form)?;
+                let record = self.workbench.create_investigation(&question, searches)?;
+                self.filter.clear();
+                self.change_view(View::Investigations.index());
+                self.refresh();
+                if let Some(index) = self
+                    .records()
+                    .iter()
+                    .position(|row| row["id"] == record["id"])
+                {
+                    self.selected[View::Investigations.index()] = index;
+                }
+                self.notice("Investigation saved locally; no search has run. Enter selects steps/findings; g runs one selected step; r reviews a finding.", false);
+            }
+            FormAction::InvestigationReview {
+                investigation_id,
+                finding_id,
+            } => {
+                let decision = form.value(0);
+                if !matches!(decision, "accepted" | "rejected") {
+                    bail!("Decision must be accepted or rejected");
+                }
+                let note = required(form.value(1), "Review rationale")?;
+                self.workbench.review_investigation_finding(
+                    investigation_id,
+                    finding_id,
+                    decision,
+                    &note,
+                )?;
+                self.notice("Human review saved locally. The summary contains accepted findings only; source observations remain unchanged.", false);
+            }
             FormAction::Discovery => {
                 let record = self.workbench.create_discovery(discovery_options(form)?)?;
                 self.filter.clear();
@@ -1529,7 +1761,7 @@ impl Ui {
         }
         let layout = Layout::vertical([
             Constraint::Length(2),
-            Constraint::Length(2),
+            Constraint::Length(self.navigation_lines(area.width).len() as u16),
             Constraint::Min(5),
             Constraint::Length(3),
         ])
@@ -1599,15 +1831,20 @@ impl Ui {
         frame.render_widget(Paragraph::new(lines), area);
     }
     fn draw_navigation(&self, frame: &mut Frame, area: Rect) {
-        let mut lines = vec![Line::default(), Line::default()];
+        frame.render_widget(Paragraph::new(self.navigation_lines(area.width)), area);
+    }
+    fn navigation_lines(&self, available: u16) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::default()];
+        let mut width = 0;
         for (index, title) in VIEWS.iter().enumerate() {
-            let line = usize::from(index >= 5);
-            let shortcut = if index == View::Reasoning.index() {
-                "b".into()
-            } else {
-                ((index + 1) % 10).to_string()
-            };
+            let shortcut = View::from_index(index).shortcut();
             let label = format!(" {shortcut}:{title} ");
+            let label_width = label.chars().count();
+            if width > 0 && width + label_width > available as usize {
+                lines.push(Line::default());
+                width = 0;
+            }
+            width += label_width;
             let style = if index == self.view.index() {
                 Style::default()
                     .bg(Color::DarkGray)
@@ -1616,11 +1853,18 @@ impl Ui {
             } else {
                 Style::default().fg(Color::Gray)
             };
-            lines[line].spans.push(Span::styled(label, style));
+            lines
+                .last_mut()
+                .unwrap()
+                .spans
+                .push(Span::styled(label, style));
         }
-        frame.render_widget(Paragraph::new(lines), area);
+        lines
     }
     fn planner_summary(&self) -> String {
+        if self.view == View::Investigations {
+            return "Telegram investigation · human-reviewed findings".into();
+        }
         let session = if self.view == View::Reasoning {
             self.current()
                 .and_then(|record| {
@@ -1652,14 +1896,16 @@ impl Ui {
         format!("planner: NVIDIA · reasoning {used}/{budget}")
     }
     fn draw_records(&self, frame: &mut Frame, area: Rect) {
-        if matches!(self.view, View::Discovery | View::Flows) {
+        if self.view.has_children() {
             let panels = Layout::vertical([
                 Constraint::Length(7.min(area.height / 2).max(3)),
                 Constraint::Min(3),
             ])
             .split(area);
             let records = self.records();
-            let title = if self.view == View::Discovery {
+            let title = if self.view == View::Investigations {
+                "Investigations · d new · Enter children"
+            } else if self.view == View::Discovery {
                 "Discovery sessions · g run/resume"
             } else {
                 "Research flows · Enter selects steps"
@@ -1673,7 +1919,9 @@ impl Ui {
                 !self.child_focus,
             );
             let children = self.children();
-            let title = if self.view == View::Discovery {
+            let title = if self.view == View::Investigations {
+                "Steps then findings · g run · r review"
+            } else if self.view == View::Discovery {
                 "Frontier · Enter switches focus"
             } else {
                 "Collector steps · r runs selection"
@@ -1721,6 +1969,7 @@ impl Ui {
                 let status = record_status(record);
                 let color = match status.as_str() {
                     "running" => ACCENT,
+                    "pending_review" => Color::Yellow,
                     "completed" | "ok" | "accepted" | "corroborated" => Color::Green,
                     "failed" | "error" | "rejected" | "contested" | "blocked" | "unavailable"
                     | "unreachable" | "needs_setup" | "planner_fai" => Color::Yellow,
@@ -1747,7 +1996,11 @@ impl Ui {
         let widget = Table::new(
             rows,
             [
-                Constraint::Length(11),
+                Constraint::Length(if self.view == View::Investigations {
+                    14
+                } else {
+                    11
+                }),
                 Constraint::Min(10),
                 Constraint::Length(5),
             ],
@@ -1785,6 +2038,9 @@ impl Ui {
                 View::Correlations => {
                     "Shared handles and explicit shared references create leads. Each lead must retain supporting evidence."
                 }
+                View::Investigations => {
+                    "d saves a question and optional Telegram search locally. Enter selects steps/findings; g runs one step; r reviews a finding. Only accepted findings enter the summary."
+                }
                 View::Reasoning => {
                     "NVIDIA planner decisions appear here with selected jobs, rationale and source anchors. z checks the provider; d selects planner=nvidia."
                 }
@@ -1814,6 +2070,32 @@ impl Ui {
                     "{} supporting evidence record(s) · o opens citations\n",
                     references.len()
                 ));
+            }
+            if self.view == View::Investigations {
+                if self.child_focus && record.get("content").is_some() {
+                    prelude.push_str(&format!(
+                        "Finding: {} · {}\n{}\n",
+                        text(&record, "status"),
+                        text(&record, "kind"),
+                        safe(text(&record, "content")),
+                    ));
+                    prelude.push_str("Analytical proposal, not source evidence.\nr opens local human review; pending/rejected findings are excluded from the summary. Identity-sensitive claims require explicit human judgment.\n");
+                } else if self.child_focus {
+                    prelude.push_str("Collection step · g runs this one bounded call. No automatic follow-ups or finding acceptance. Inspect run_id, options and errors below.\n");
+                } else {
+                    prelude.push_str(&format!(
+                        "Question: {}\n\nAccepted findings only\n",
+                        safe(text(&record, "question"))
+                    ));
+                    let summary = array(&record, "summary");
+                    if summary.is_empty() {
+                        prelude.push_str("None accepted. Pending proposals are not conclusions.\n");
+                    }
+                    for finding in summary {
+                        prelude.push_str(&format!("- {}\n", safe(text(&finding, "content"))));
+                    }
+                    prelude.push_str(&format!("\nCoverage: {}\nEnter selects steps/findings; g runs a step; r reviews a finding.\n", safe(&record["coverage"].as_str().map(str::to_owned).unwrap_or_else(|| record["coverage"].to_string()))));
+                }
             }
             if self.view == View::Correlations {
                 prelude.push_str(
@@ -1880,6 +2162,8 @@ impl Ui {
                 &serde_json::to_string_pretty(&record).unwrap_or_default(),
             ));
             prelude
+        } else if self.view == View::Investigations {
+            "Press d to create a Telegram investigation question with an optional archive query. Ctrl+S saves locally; Enter only moves between fields.\n\nAfter saving, Enter selects steps/findings. g runs one selected step in the background. Findings remain pending_review until a local human explicitly accepts or rejects them with r and Ctrl+S. Only accepted findings enter the summary.\n\nArchive coverage is historical, incomplete and not direct Telegram verification. Citations preserve source context; account matches do not establish identity or ownership.".into()
         } else if self.view == View::Reasoning {
             let provider = self
                 .provider_status
@@ -1903,7 +2187,9 @@ impl Ui {
         frame.render_widget(widget, area);
     }
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let keys = if self.view == View::Discovery {
+        let keys = if self.view == View::Investigations {
+            "d new question  Enter parents/children  g run step  r review finding  o citations"
+        } else if self.view == View::Discovery {
             "d new  m planner  g run/resume  p pause  b reasoning  z NVIDIA status"
         } else if self.view == View::Reasoning {
             "Enter recommended job  o supporting evidence  z NVIDIA status  p pause"
@@ -2082,7 +2368,11 @@ fn popup(area: Rect, width: u16, height: u16) -> Rect {
 fn record_status(record: &Value) -> String {
     for key in ["status", "collector_status", "kind", "type"] {
         if let Some(value) = record[key].as_str().filter(|v| !v.is_empty()) {
-            return value.chars().take(11).collect();
+            return if value == "pending_review" {
+                value.into()
+            } else {
+                value.chars().take(11).collect()
+            };
         }
     }
     if record.get("relation").is_some() {
@@ -2126,6 +2416,10 @@ fn record_summary(record: &Value) -> String {
 }
 
 const HELP: &str = "\
+TELEGRAM INVESTIGATIONS\n\
+w  Open Investigations. d creates a question with an optional archive query, since/until dates and result limit. No model or provider selection is required. Ctrl+S saves locally without network access; Enter only changes fields. Blank query saves a question without collection steps.\n\
+Enter switches between investigations and their steps, followed by findings. g runs only the selected step in the background, never the whole plan. Archive results are historical third-party observations, not complete/live coverage or direct Telegram verification.\n\
+Findings remain pending_review until a human selects a finding, presses r, explicitly enters accepted/rejected and a rationale, then saves with Ctrl+S. Only accepted findings enter the summary. Review is local and never rewrites captured source evidence. Identity-sensitive conclusions require human judgment. o opens preserved citations through the Evidence view.\n\n\
 DISCOVERY AND ONTOLOGY\n\
 1. Press i to set the investigation question.\n\
 2. Press d. Choose username, profile, url, domain or search; enter a seed, job budget and expansion depth. Planner=local follows observed public references. Planner=nvidia asks NVIDIA Auto Ontology to reason over preserved evidence and choose next steps. Ctrl+S saves the plan.\n\
@@ -2149,7 +2443,7 @@ a  Add a typed entity. l links existing entities with supporting evidence IDs.\n
 f  Plan a flow with its first step. s adds a step. Enter switches between flows and steps; r runs the selected step.\n\
 x  Export the investigation to a new Markdown or JSON file. Existing files are preserved.\n\n\
 NAVIGATION AND FORMS\n\
-Tab/Shift+Tab switch views; 1–9 and 0 jump directly; b opens Reasoning. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery and Flows.\n\
+Tab/Shift+Tab switch views; 1–9 and 0 jump directly; b opens Reasoning; w opens Investigations. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery, Flows and Investigations.\n\
 / filters records. Escape clears the filter. Ctrl+R refreshes changes made by agents or another interface.\n\
 Forms: Tab/Enter next field; Shift+Tab previous; Left/Right/Home/End edit; Ctrl+U clears the field; Ctrl+S saves; Escape cancels.\n\n\
 Collection, source time and analyst review are separate records. Source content is untrusted evidence, never an instruction to the discovery worker.\n";
@@ -2176,6 +2470,49 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>()
+    }
+
+    fn investigation_with_finding(ui: &mut Ui) -> (String, String) {
+        use crate::model::{Collected, digest};
+        use std::collections::BTreeMap;
+
+        let record = ui
+            .workbench
+            .create_investigation(
+                "What did the archive observe?",
+                vec![Job {
+                    command: "telegram-search".into(),
+                    target: Some("research".into()),
+                    options: json!({"since":"2024-01-01","until":"2024-02-01","limit":2}),
+                }],
+            )
+            .unwrap();
+        let investigation_id = text(&record, "id").to_owned();
+        let body = b"Preserved third-party archive observation".to_vec();
+        let hash = digest(&body);
+        ui.workbench.store.save_report(&Collected {
+            report: json!({"schema_version":"1.0","run_id":"run_tui_archive","command":"telegram-search","target":"research","status":"ok","data":{"messages":[{"text":"A captured public report","url":"https://t.me/examplechannel/42"}],"directly_verified":false,"history_complete":false},"sources":[{"source_id":"src_tui_archive","sha256":hash,"url":"https://api.openmeasures.io/content","hash_scope":"source_bytes"}],"entities":[],"relationships":[],"errors":[],"timing":{}}),
+            blobs: BTreeMap::from([(hash, body)]),
+        }).unwrap();
+        let mut saved = ui
+            .workbench
+            .store
+            .get("investigations", &investigation_id)
+            .unwrap();
+        saved["steps"][0]["run_id"] = json!("run_tui_archive");
+        saved["steps"][0]["status"] = json!("ok");
+        ui.workbench.store.put("investigations", &saved).unwrap();
+        let finding = ui
+            .workbench
+            .propose_investigation_finding(
+                &investigation_id,
+                "The account may be associated with the report; ownership is not established.",
+                "identity_sensitive",
+                vec![json!({"step_id":saved["steps"][0]["id"],"pointer":"/data/messages/0"})],
+            )
+            .unwrap();
+        ui.refresh();
+        (investigation_id, text(&finding, "id").to_owned())
     }
 
     #[test]
@@ -2222,7 +2559,7 @@ mod tests {
         let (_directory, mut ui) = ui();
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::BackTab));
-        assert_eq!(ui.view, View::Reasoning);
+        assert_eq!(ui.view, View::Investigations);
         ui.key(press(KeyCode::Tab));
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::Char('4')));
@@ -2417,6 +2754,238 @@ mod tests {
             ui.modal = None;
         }
     }
+    #[test]
+    fn investigation_shortcut_is_unique_and_preserves_numbered_views() {
+        let (_directory, mut ui) = ui();
+        let shortcuts = (0..VIEWS.len())
+            .map(|index| View::from_index(index).shortcut())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(shortcuts.len(), VIEWS.len());
+        ui.key(press(KeyCode::Char('w')));
+        assert_eq!(ui.view, View::Investigations);
+        for (key, expected) in [
+            ('1', View::Discovery),
+            ('7', View::Flows),
+            ('0', View::Activity),
+            ('b', View::Reasoning),
+        ] {
+            ui.key(press(KeyCode::Char(key)));
+            assert_eq!(ui.view, expected);
+        }
+    }
+    #[test]
+    fn investigation_creation_requires_explicit_save_and_never_starts_collection() {
+        let (directory, mut ui) = ui();
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Char('d')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("investigation form")
+        };
+        assert_eq!(form.fields.len(), 5, "no model/provider selector");
+        form.fields[0].value = "Which reports were archived?".into();
+        form.fields[1].value = "public research".into();
+        form.fields[2].value = "2024-01-01".into();
+        form.fields[3].value = "2024-02-01".into();
+        form.fields[4].value = "3".into();
+        ui.key(press(KeyCode::Enter));
+        assert!(ui.workbench.investigations().unwrap().is_empty());
+        ui.key(press(KeyCode::Esc));
+        assert!(ui.workbench.investigations().unwrap().is_empty());
+        ui.key(press(KeyCode::Char('d')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("investigation form")
+        };
+        form.fields[0].value = "Which reports were archived?".into();
+        form.fields[1].value = "public research".into();
+        form.fields[2].value = "2024-01-01".into();
+        form.fields[3].value = "2024-02-01".into();
+        form.fields[4].value = "3".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(ui.modal.is_none());
+        assert!(ui.worker.is_none());
+        let record = ui.selected_investigation().unwrap();
+        assert_eq!(record["question"], "Which reports were archived?");
+        let children = ui.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0]["command"], "telegram-search");
+        assert_eq!(children[0]["status"], "pending");
+        assert!(children[0]["run_id"].is_null());
+        assert_eq!(
+            children[0]["options"],
+            json!({"since":"2024-01-01","until":"2024-02-01","limit":3})
+        );
+        let reopened = Workbench::new(directory.path().join("case"), Config::default()).unwrap();
+        assert_eq!(reopened.investigations().unwrap().len(), 1);
+        assert!(reopened.store.reports(10).unwrap().is_empty());
+    }
+    #[test]
+    fn investigation_question_only_and_search_validation_are_local() {
+        let (_directory, mut ui) = ui();
+        ui.investigation_form();
+        let Some(Modal::Form(mut form)) = ui.modal.take() else {
+            panic!("investigation form")
+        };
+        assert!(ui.submit(&form).is_err(), "question is required");
+        form.fields[0].value = "What evidence is still missing?".into();
+        ui.submit(&form).unwrap();
+        assert!(ui.children().is_empty());
+        form.fields[1].value = "research".into();
+        form.fields[4].value = "101".into();
+        assert!(investigation_searches(&form).is_err());
+        form.fields[4].value = "2".into();
+        form.fields[2].value = "not-a-date".into();
+        assert!(investigation_searches(&form).is_err());
+        form.fields[2].value = "2024-02-01".into();
+        form.fields[3].value = "2024-01-01".into();
+        assert!(investigation_searches(&form).is_err());
+        assert!(ui.worker.is_none());
+        assert!(ui.workbench.store.reports(10).unwrap().is_empty());
+    }
+    #[test]
+    fn investigation_step_dispatch_is_bounded_and_off_the_ui_thread() {
+        let (_directory, mut ui) = ui();
+        investigation_with_finding(&mut ui);
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Char('g')));
+        assert!(
+            ui.worker.is_none(),
+            "parent selection cannot start collection"
+        );
+        ui.key(press(KeyCode::Enter));
+        // This preserved step was already attempted, so the bounded backend call
+        // fails locally without network access or automatically retrying it.
+        ui.key(press(KeyCode::Char('g')));
+        assert!(
+            ui.worker
+                .as_ref()
+                .is_some_and(|worker| worker.kind == WorkerKind::InvestigationStep)
+        );
+        ui.key(press(KeyCode::Char('p')));
+        assert!(!ui.worker.as_ref().unwrap().stop.load(Ordering::Relaxed));
+        let worker = ui.worker.take().unwrap();
+        let result = worker
+            .receiver
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        worker.handle.join().unwrap();
+        assert!(matches!(result, WorkerEvent::Done(Err(_))));
+        assert_eq!(ui.workbench.store.reports(10).unwrap().len(), 1);
+    }
+    #[test]
+    fn investigation_findings_require_explicit_local_human_review() {
+        let (_directory, mut ui) = ui();
+        let (id, finding_id) = investigation_with_finding(&mut ui);
+        let original = ui
+            .workbench
+            .store
+            .get("investigation_findings", &finding_id)
+            .unwrap();
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Enter));
+        ui.key(press(KeyCode::Char('r')));
+        assert!(ui.modal.is_none(), "steps cannot be reviewed as findings");
+        ui.key(press(KeyCode::Down));
+        ui.key(press(KeyCode::Char('g')));
+        assert!(ui.worker.is_none(), "findings must not trigger collection");
+        assert_eq!(ui.current().unwrap()["status"], "pending_review");
+        ui.key(press(KeyCode::Char('r')));
+        let Some(Modal::Form(form)) = &ui.modal else {
+            panic!("human review form")
+        };
+        assert!(
+            form.value(0).is_empty(),
+            "acceptance must not be preselected"
+        );
+        ui.key(press(KeyCode::Enter));
+        ui.key(press(KeyCode::Esc));
+        assert!(array(&ui.workbench.investigation(&id).unwrap(), "summary").is_empty());
+        ui.key(press(KeyCode::Char('r')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("human review form")
+        };
+        form.fields[0].value = "accepted".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("rationale is required")
+        };
+        assert!(form.error.contains("rationale"));
+        form.fields[1].value =
+            "Accept only as a cited hypothesis; this archive does not establish ownership.".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(ui.modal.is_none());
+        let record = ui.workbench.investigation(&id).unwrap();
+        assert_eq!(record["summary"][0]["id"], finding_id);
+        assert_eq!(record["findings"][0]["status"], "accepted");
+        assert_eq!(
+            record["findings"][0]["review"]["authority"],
+            "local_human_review"
+        );
+        assert!(ui.worker.is_none());
+        ui.key(press(KeyCode::Char('r')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("human review form")
+        };
+        form.fields[0].value = "rejected".into();
+        form.fields[1].value = "The preserved report does not support this association.".into();
+        ui.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(ui.modal.is_none());
+        let record = ui.workbench.investigation(&id).unwrap();
+        assert!(array(&record, "summary").is_empty());
+        assert_eq!(record["findings"][0]["status"], "rejected");
+        assert_eq!(
+            ui.workbench
+                .store
+                .get("investigation_findings", &finding_id)
+                .unwrap(),
+            original,
+            "reviews preserve the original proposal and citations"
+        );
+    }
+    #[test]
+    fn investigation_pending_findings_render_and_citations_open_evidence() {
+        let (_directory, mut ui) = ui();
+        investigation_with_finding(&mut ui);
+        ui.key(press(KeyCode::Char('w')));
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        assert!(buffer_text(&terminal).contains("None accepted"));
+        ui.key(press(KeyCode::Enter));
+        ui.key(press(KeyCode::Down));
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        let output = buffer_text(&terminal);
+        assert!(output.contains("pending_review"));
+        assert!(output.contains("identity_sensitive"));
+        assert!(output.contains("human review"));
+        for (width, height) in [(80, 24), (55, 15)] {
+            let mut small = Terminal::new(TestBackend::new(width, height)).unwrap();
+            small.draw(|frame| ui.draw(frame)).unwrap();
+            assert!(buffer_text(&small).contains("w:Investigations"));
+        }
+        assert_eq!(
+            reference_ids(&ui.current().unwrap()),
+            vec!["evidence_run_tui_archive"]
+        );
+        ui.key(press(KeyCode::Char('o')));
+        assert_eq!(ui.view, View::Evidence);
+        assert_eq!(
+            text(&ui.current().unwrap(), "id"),
+            "evidence_run_tui_archive"
+        );
+    }
+    #[test]
+    fn investigation_citation_only_references_use_the_existing_picker() {
+        let (_directory, mut ui) = ui();
+        ui.data["investigations"] = json!([{"id":"inv","question":"Question","steps":[],"findings":[{"id":"finding","content":"Pending claim","status":"pending_review","citations":[{"evidence_id":"ev_b"},{"evidence_id":"ev_a"}]}],"summary":[]}]);
+        ui.data["evidence"] = json!([{"id":"ev_a","title":"A"},{"id":"ev_b","title":"B"}]);
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Enter));
+        ui.key(press(KeyCode::Char('o')));
+        assert!(matches!(ui.modal, Some(Modal::EvidencePicker { .. })));
+        ui.key(press(KeyCode::Down));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(text(&ui.current().unwrap(), "id"), "ev_b");
+    }
+
     #[test]
     fn review_requires_rationale_and_retains_form_on_error() {
         let (_directory, mut ui) = ui();

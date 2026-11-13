@@ -2,6 +2,7 @@ pub mod api;
 pub mod app;
 pub mod collectors;
 pub mod discovery;
+pub mod investigation;
 pub mod mcp;
 pub mod model;
 pub mod nvidia;

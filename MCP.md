@@ -27,6 +27,37 @@ The query is sent to Open Measures, not Telegram. The public API requires no key
 
 With a configured case, response bytes and reports enter the same evidence ledger used by the TUI. Results are third-party archive observations with `directly_verified: false`, separate publication/archive/collection times and raw-source pointers. Graph URLs are search-result leads, not verified Telegram posts or identity claims. Use `fieldkit_telegram_post` only for selected public-post checks; request human approval before identity interpretations. Existing review tools have no new approval-role enforcement in this connector.
 
+## Telegram investigation tools
+
+With a case configured, an interchangeable agent can turn a natural-language question into a persistent investigation. No model-provider SDK is required. All tools share the TUI's case.
+
+| Tool | Arguments / result |
+| --- | --- |
+| `fieldkit_investigation_create` | `question`, optional `searches` (0–5 `telegram-search` jobs); returns ID and pending steps, without collecting |
+| `fieldkit_investigation_show` | `id`; steps, pending/rejected/accepted findings, accepted-only `summary` |
+| `fieldkit_investigation_run_step` | `id`, `step_id`; attempts one pending step once and returns its collector report |
+| `fieldkit_investigation_evidence` | `id`, `step_id`; full immutable report, independent of the latest-500-report view |
+| `fieldkit_investigation_select_post` | `id`, search `step_id`, zero-based `index`; plans the archived result's exact public-post capture |
+| `fieldkit_investigation_propose` | `id`, `content`, `kind`, `citations`; immutable pending proposal, never auto-approved |
+
+Create example:
+
+```json
+{"question":"Which public Telegram posts discussed Bellingcat in January 2024?","searches":[{"command":"telegram-search","target":"bellingcat","options":{"since":"2024-01-01","until":"2024-02-01","limit":5}}]}
+```
+
+A finding cites 1–20 exact observations:
+
+```json
+{"id":"INVESTIGATION_ID","content":"The archive returned a post mentioning the topic; authorship and identity are not established.","kind":"observation","citations":[{"step_id":"SEARCH_STEP_ID","pointer":"/data/messages/0"}]}
+```
+
+Use `/data` for a selected `telegram-post` capture. `kind` is `observation`, `hypothesis`, or `identity_sensitive`; **all require local review**. Citations bind report/source hashes and pointers, not source truth or semantic entailment. There is deliberately no finding-review/approval tool or HTTP operation. Review through local TUI `w`, Enter, select finding, `r`, mandatory rationale, Ctrl+S. Approval binds the exact proposal; a new proposal needs new approval. Accepted findings remain assessments, not independent source evidence or ownership edges.
+
+Plans permit at most ten total collection steps. Attempted steps cannot be rerun, including uncertain interrupted outcomes. Inspect preserved evidence before making a new plan. Public archive limits and third-party query disclosure above still apply. HTTP offers the same `/api/investigations/{create,show,run,evidence,select,propose}` operations, with collection queued in the background; it has no dedicated investigation browser UI.
+
+This review boundary protects the structured investigation summary, not arbitrary free-text notes or legacy reviews, and assumes agents do not have direct shell/database access to the trusted local case. See [AGENT_USAGE.md](AGENT_USAGE.md) for the full agent sequence.
+
 Shared-case tools include `fieldkit_case_workspace`, `fieldkit_case_show`, `fieldkit_case_update`, `fieldkit_case_verify`, `fieldkit_case_export`, evidence capture/review, notes, entities, evidence-backed links, flow planning/execution, correlation generation/review, and:
 
 | Tool | Purpose |

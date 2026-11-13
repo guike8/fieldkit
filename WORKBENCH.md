@@ -8,6 +8,18 @@ Open a case:
 
 Cases created by Fieldkit's earlier Python version remain compatible. A new case is empty; the TUI never seeds demo evidence automatically.
 
+## Telegram question → cited findings
+
+The main entry is an agent chat connected to Fieldkit MCP: ask a question in ordinary language. The agent saves the question, derives bounded historical searches, inspects results, selects exact public-post captures, and drafts cited findings. No model-provider configuration is added inside Fieldkit.
+
+Press **w** for Investigations. **d** opens a local question/search form; the query is optional and dates/limit apply to a supplied query. **Ctrl+S saves only**, with no collection. **Enter** focuses the children (planned collection steps followed by findings). Select a pending step and press **g** to run it in the background; navigation remains available while collection finishes. No attempted step is automatically retried, even after interruption. The MCP tools handle selecting exact archived posts and proposing findings; this first TUI form is not an automatic language planner.
+
+A plan supports up to five archive searches and ten total collection steps. Open Measures exposes historical, incomplete third-party observations with a documented six-month minimum age and 39 public queries/day. Query text leaves the machine for that provider. A selected public-page capture is separate from an archived observation and may be unavailable or changed. Neither establishes identity or historical authorship.
+
+Select a finding and press **o** to inspect its supporting evidence. Pending proposals are not conclusions. Press **r**, choose `accepted` or `rejected`, write a rationale, then **Ctrl+S**. Enter alone never approves; Esc cancels. Every finding kind needs this review, including anything labeled an observation. Accepted findings alone enter the investigation's structured summary; the original proposal, report and captured bytes remain separate. A revised proposal needs a new review.
+
+Approval is available only in the local TUI, not MCP/HTTP/CLI operations. This is an interface boundary, not protection from an agent with direct shell/database access; arbitrary notes and older claim/correlation reviews are not covered by the new summary gate. Citations prove retained provenance, not the truth or adequacy of an interpretation. **Ctrl+R** shows changes made by an agent while the TUI is idle.
+
 ## Start a username investigation
 
 Press `i`, set the title and a question such as “Which public profiles explicitly reference the same project?”, then `Ctrl+S`.
@@ -76,6 +88,7 @@ Press `n` to add a note linked to selected evidence or claim citations. Record a
 
 | Key | Action |
 | --- | --- |
+| `w` | Telegram investigations; `d` plan, `g` run selected step, `r` review selected finding |
 | `d` / `g` / `p` | Plan discovery / run-resume / pause |
 | `m` / `b` / `z` | Configure selected planner / Reasoning view / NVIDIA readiness |
 | `Tab` / `Shift+Tab` | Next / previous view |

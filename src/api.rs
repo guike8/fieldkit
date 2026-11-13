@@ -9,6 +9,30 @@ use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 
 pub const OPERATIONS: &[(&str, &str)] = &[
+    (
+        "investigations/create",
+        "Persist the user's Telegram question and up to five agent-planned historical searches; does not collect",
+    ),
+    (
+        "investigations/show",
+        "Inspect a shared investigation, pending proposals and human-reviewed summary",
+    ),
+    (
+        "investigations/run",
+        "Attempt one planned collection step once; no retries or pagination",
+    ),
+    (
+        "investigations/evidence",
+        "Inspect a selected step's full preserved report, including older evidence outside the recent case window",
+    ),
+    (
+        "investigations/select",
+        "Plan a public-post capture from an exact archived search result; does not collect",
+    ),
+    (
+        "investigations/propose",
+        "Propose an immutable cited finding; all kinds require local human review before summary inclusion",
+    ),
     ("case", "Set case title and investigation question"),
     ("evidence", "Preserve analyst-supplied evidence"),
     (
@@ -66,6 +90,23 @@ pub fn operation_schema(operation: &str) -> Value {
     let identifier = json!({"type":"string","minLength":1,"maxLength":256});
     let refs = json!({"type":"array","items":identifier,"maxItems":50});
     let (properties, required) = match operation {
+        "investigations/create" => (
+            json!({"question":{"type":"string","minLength":1,"maxLength":4000},"searches":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"command":{"enum":["telegram-search"]},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false}}}),
+            vec!["question"],
+        ),
+        "investigations/show" => (json!({"id":identifier}), vec!["id"]),
+        "investigations/run" | "investigations/evidence" => (
+            json!({"id":identifier,"step_id":identifier}),
+            vec!["id", "step_id"],
+        ),
+        "investigations/select" => (
+            json!({"id":identifier,"step_id":identifier,"index":{"type":"integer","minimum":0,"maximum":99}}),
+            vec!["id", "step_id", "index"],
+        ),
+        "investigations/propose" => (
+            json!({"id":identifier,"content":{"type":"string","minLength":1,"maxLength":12000},"kind":{"enum":["observation","hypothesis","identity_sensitive"]},"citations":{"type":"array","maxItems":20,"items":{"type":"object","properties":{"step_id":identifier,"pointer":{"type":"string","minLength":1,"maxLength":128}},"required":["step_id","pointer"],"additionalProperties":false}}}),
+            vec!["id", "content", "kind", "citations"],
+        ),
         "case" => (json!({"title":s,"question":s}), vec!["title"]),
         "evidence" => (
             json!({"title":s,"content":s,"source_url":s,"kind":s,"observed_at":s}),
@@ -198,6 +239,26 @@ pub fn apply(workbench: &Workbench, operation: &str, v: &Value) -> Result<Value>
     );
     validate(v, &operation_schema(operation))?;
     match operation {
+        "investigations/create" => workbench.create_investigation(
+            text(v, "question"),
+            serde_json::from_value(v.get("searches").cloned().unwrap_or(json!([])))?,
+        ),
+        "investigations/show" => workbench.investigation(text(v, "id")),
+        "investigations/run" => workbench.run_investigation_step(text(v, "id"), text(v, "step_id")),
+        "investigations/evidence" => {
+            workbench.investigation_evidence(text(v, "id"), text(v, "step_id"))
+        }
+        "investigations/select" => workbench.select_investigation_post(
+            text(v, "id"),
+            text(v, "step_id"),
+            v["index"].as_u64().unwrap() as usize,
+        ),
+        "investigations/propose" => workbench.propose_investigation_finding(
+            text(v, "id"),
+            text(v, "content"),
+            text(v, "kind"),
+            v["citations"].as_array().unwrap().clone(),
+        ),
         "case" => workbench.update_case(text(v, "title"), text(v, "question")),
         "evidence" => workbench.add_evidence(
             text(v, "title"),

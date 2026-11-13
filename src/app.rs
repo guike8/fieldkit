@@ -401,7 +401,7 @@ impl Application {
         let payload = scoped_operation(&self.workspace, &self.model, operation, &payload)?;
         if matches!(
             operation,
-            "tools/run" | "flows/run" | "discovery/run" | "nvidia/ask"
+            "tools/run" | "flows/run" | "discovery/run" | "nvidia/ask" | "investigations/run"
         ) {
             return Ok(Reply::json(self.enqueue(operation, payload)?, 202));
         }
@@ -698,6 +698,42 @@ mod tests {
             app.model.store.meta().unwrap()["title"],
             "Changed through HTTP"
         );
+    }
+
+    #[test]
+    fn investigation_approval_is_not_an_http_operation_even_with_csrf_token() {
+        let (_directory, app) = app();
+        let server = Server::http((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        for (operation, body) in [
+            (
+                "investigations/review",
+                json!({"id":"finding_test","decision":"accepted","note":"agent supplied"}),
+            ),
+            (
+                "investigations/create",
+                json!({"question":"q","summary":["Identity conclusion"],"status":"accepted"}),
+            ),
+        ] {
+            let body = body.to_string();
+            let (_client, mut req) = request(
+                &server,
+                &format!(
+                    "POST /api/{operation} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Fieldkit-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    app.token,
+                    body.len()
+                ),
+            );
+            assert_eq!(app.handle(&mut req, port).status, 400);
+        }
+        assert!(
+            app.model
+                .store
+                .list("investigation_reviews")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(app.model.store.list("investigations").unwrap().is_empty());
     }
 
     #[test]

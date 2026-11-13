@@ -58,12 +58,17 @@ impl Workbench {
         Ok(metadata)
     }
 
-    pub fn run_tool(&self, job: &Job) -> Result<Value> {
+    pub(crate) fn collect_preserved(&self, job: &Job) -> Result<Value> {
         let collected = collectors::collect(job, &self.config)?;
         self.store.save_report(&collected)?;
-        self.store.event("collector.completed","Collector result preserved",json!({"command":job.command,"target":job.target,"run_id":collected.report["run_id"],"status":collected.report["status"]}))?;
-        self.sync_ontology()?;
         Ok(collected.report)
+    }
+
+    pub fn run_tool(&self, job: &Job) -> Result<Value> {
+        let report = self.collect_preserved(job)?;
+        self.store.event("collector.completed","Collector result preserved",json!({"command":job.command,"target":job.target,"run_id":report["run_id"],"status":report["status"]}))?;
+        self.sync_ontology()?;
+        Ok(report)
     }
 
     pub fn references(&self, values: Vec<String>, required: bool) -> Result<Vec<String>> {
@@ -668,6 +673,7 @@ impl Workbench {
         state["case_path"] = json!(self.store.path);
         state["schema_version"] = json!("1.0");
         state["correlations"] = json!(correlations);
+        state["investigations"] = json!(self.investigations()?);
         state["flows"] = json!(self.store.list("flows")?);
         state["notes"] = json!(self.store.list("notes")?);
         state["activity"] = json!(self.store.activity()?);
@@ -695,6 +701,7 @@ impl Workbench {
             markdown(text(&payload["workspace"]["metadata"], "question"))
         );
         for key in [
+            "investigations",
             "evidence",
             "correlations",
             "ontology",

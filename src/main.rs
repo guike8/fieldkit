@@ -55,6 +55,12 @@ enum Command {
         #[arg(long,default_value_t=2,value_parser=clap::value_parser!(u64).range(1..=8))]
         jobs: u64,
     },
+    /// Persist or advance a Telegram investigation using a JSON payload (use - for stdin).
+    Investigation {
+        #[arg(value_parser=["create","show","run","evidence","select","propose"])]
+        action: String,
+        file: String,
+    },
     /// Read, export, or verify a case.
     Case {
         action: String,
@@ -279,6 +285,15 @@ fn run(cli: Cli) -> Result<i32> {
             let report = batch(&input(&file)?, &file, jobs as usize, &config, &cli.case)?;
             print(&report)?;
             return Ok(status_code(&report));
+        }
+        Command::Investigation { action, file } => {
+            let w = Workbench::new(default_case(), config)?;
+            let payload: Value = serde_json::from_str(&input(&file)?)?;
+            let result = fieldkit::api::apply(&w, &format!("investigations/{action}"), &payload)?;
+            print(&result)?;
+            if action == "run" {
+                return Ok(status_code(&result));
+            }
         }
         Command::Case {
             action,

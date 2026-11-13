@@ -1,0 +1,14 @@
+{
+  "question": "Which public Telegram posts discussed Bellingcat in January 2024?",
+  "searches": [
+    {
+      "command": "telegram-search",
+      "target": "bellingcat",
+      "options": {
+        "since": "2024-01-01",
+        "until": "2024-02-01",
+        "limit": 5
+      }
+    }
+  ]
+}

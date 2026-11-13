@@ -13,6 +13,15 @@ use std::{
 const MAX_MESSAGE: usize = 1024 * 1024;
 const CAPABILITIES_URI: &str = "fieldkit://capabilities";
 const WORKSPACE_TOOLS: &[(&str, &str)] = &[
+    ("fieldkit_investigation_create", "investigations/create"),
+    ("fieldkit_investigation_show", "investigations/show"),
+    ("fieldkit_investigation_run_step", "investigations/run"),
+    ("fieldkit_investigation_evidence", "investigations/evidence"),
+    (
+        "fieldkit_investigation_select_post",
+        "investigations/select",
+    ),
+    ("fieldkit_investigation_propose", "investigations/propose"),
     ("fieldkit_case_update", "case"),
     ("fieldkit_evidence_add", "evidence"),
     ("fieldkit_evidence_review", "evidence/review"),
@@ -217,7 +226,10 @@ impl Broker {
                     name,
                     description,
                     api::operation_schema(operation),
-                    *operation == "nvidia/status",
+                    matches!(
+                        *operation,
+                        "nvidia/status" | "investigations/show" | "investigations/evidence"
+                    ),
                 ));
             }
             for (name, description) in [

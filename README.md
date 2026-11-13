@@ -20,6 +20,16 @@ fieldkit tui --case cases/my-investigation
 
 The runtime is Rust throughout: collectors, SQLite storage, discovery, ontology, TUI, HTTP server, and MCP. The browser uses embedded HTML/CSS/JavaScript. Prior Python/C++ implementations are archived under `legacy/` for reference and are never invoked by the Rust runtime.
 
+## Natural-language Telegram investigations
+
+Ask a connected MCP agent a question such as “Which public Telegram posts discussed Bellingcat in January 2024?” The agent derives bounded archive queries, saves the original question, inspects returned observations, selects public posts for separate capture, and proposes cited findings in the shared case. Fieldkit remains agent/provider-neutral; the existing NVIDIA integration is unchanged.
+
+Open **w:Investigations** in the TUI (**Ctrl+R** refreshes an idle view). **d** saves a question and optional historical search, **Enter** switches to steps/findings, and **g** attempts a selected pending step in the background. **o** opens supporting evidence. Findings of **every kind** remain pending until reviewed locally with **r**, a rationale, and **Ctrl+S**. The investigation `summary` includes only accepted findings. Approval is not exposed to MCP or HTTP, and never turns an assessment into independent evidence or an identity graph edge.
+
+The boundary covers structured investigation findings, not arbitrary notes/legacy reviews or agents with direct shell/database access. Source citations establish provenance, not truth. Historical index limitations still apply; current public embeds may be missing or changed. Plans allow five archive searches and ten total collection steps, each attempted once without automatic replay after interruption.
+
+CLI equivalents accept JSON payloads: `fieldkit --case cases/example investigation create examples/telegram-investigation.json`, then `investigation show|run|evidence|select|propose PAYLOAD.json` (or `-` for stdin). Approval is intentionally TUI-only. See [AGENT_USAGE.md](AGENT_USAGE.md), [MCP.md](MCP.md), and [WORKBENCH.md](WORKBENCH.md).
+
 ## Username → discovery → evidence → correlations
 
 1. Press **i** to set a case title and research question. **Ctrl+S** saves forms; **Tab** moves between fields.
