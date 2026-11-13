@@ -8,6 +8,16 @@ Open a case:
 
 Cases created by Fieldkit's earlier Python version remain compatible. A new case is empty; the TUI never seeds demo evidence automatically.
 
+## Agent-driven recon and relationship graph
+
+Ask your connected terminal agent a scoped person, organization or infrastructure question. It preserves the question and explicit seeds, chooses justified collection steps, inspects results, follows exact source-backed leads and drafts findings. The agent runs outside Fieldkit through MCP; the TUI is the same persistent workspace, not a second model client. See [AGENT_USAGE.md](AGENT_USAGE.md#agent-led-recon--terminal-relationship-graph).
+
+Press **G** for the relationship graph. It is a focused neighborhood, not a tangled whole-case diagram: typed node → directed, labeled relationships → neighboring nodes. Select a relationship to inspect its sources; **Enter** follows the neighbor, **Backspace** returns, and **o** opens original evidence. Incoming and outgoing directions remain explicit in text, independent of color. Disconnected nodes and empty cases remain visible without invented links.
+
+An agent can call `fieldkit_graph_focus` to bring a source-backed neighborhood into the idle terminal. The TUI checks a lightweight activity token and refreshes when the case changes; it does not repeatedly reload all evidence while nothing changes. An open review/editor is never dismissed by agent focus. Ctrl+R still forces a refresh.
+
+Graph edges mean **attributed source observations**, not verified ownership. Matching handles and different typed representations stay distinct; candidate correlations, analyst links, model assessments and investigation proposals do not become observed graph edges. Legacy claim reviews are labeled separately from local investigation approval. The case graph covers the latest 500 reports and states its limitations; keep the whole case for older captures. Hashes prove retained bytes, not source truth.
+
 ## Telegram question → cited findings
 
 The main entry is an agent chat connected to Fieldkit MCP: ask a question in ordinary language. The agent saves the question, derives bounded historical searches, inspects results, selects exact public-post captures, and drafts cited findings. No model-provider configuration is added inside Fieldkit.
@@ -88,7 +98,8 @@ Press `n` to add a note linked to selected evidence or claim citations. Record a
 
 | Key | Action |
 | --- | --- |
-| `w` | Telegram investigations; `d` plan, `g` run selected step, `r` review selected finding |
+| `G` | Relationship graph; Enter follows a neighbor, Backspace returns, `o` opens evidence |
+| `w` | Shared investigations; `d` Telegram plan, `g` run selected step, `r` review selected finding |
 | `d` / `g` / `p` | Plan discovery / run-resume / pause |
 | `m` / `b` / `z` | Configure selected planner / Reasoning view / NVIDIA readiness |
 | `Tab` / `Shift+Tab` | Next / previous view |

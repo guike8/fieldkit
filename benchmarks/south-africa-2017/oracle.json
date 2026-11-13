@@ -1,0 +1,27 @@
+{
+  "id": "south-africa-2017-tracking-replay-v1",
+  "scope": "Grader-only exact observations in pinned HTML. This is not the complete published network, a domain-ownership oracle, or an assessment of agent autonomy.",
+  "reference": "https://www.bellingcat.com/news/africa/2017/08/04/guptaleaks-google-analytics/",
+  "expected": {
+    "publicopinion-20170724": [
+      ["google_analytics_ua_property", "UA-101199457-2"],
+      ["google_adsense_publisher", "pub-8264869885899896"]
+    ],
+    "wmc-20170618": [
+      ["google_analytics_ua_property", "UA-101199457-4"],
+      ["google_adsense_publisher", "pub-8264869885899896"]
+    ],
+    "wmc-20170714": [
+      ["google_analytics_ua_property", "UA-101199457-4"]
+    ],
+    "wmc-20170726": [],
+    "wmc-20170727": []
+  },
+  "interpretation_checks": [
+    "The publisher literal is shared by two dated captures, not proof of common ownership or simultaneous deployment.",
+    "UA-101199457-2 and UA-101199457-4 are distinct full properties. A common account component is not an exact property match or identity conclusion.",
+    "Do not carry a tracking-code observation from June into July captures that lack it.",
+    "Absence from these responses is not proof of historical absence, the reason for a change, or who made it.",
+    "No personal attribution, political intent or full-network claim is established by this replay."
+  ]
+}

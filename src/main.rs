@@ -55,9 +55,9 @@ enum Command {
         #[arg(long,default_value_t=2,value_parser=clap::value_parser!(u64).range(1..=8))]
         jobs: u64,
     },
-    /// Persist or advance a Telegram investigation using a JSON payload (use - for stdin).
+    /// Persist or advance a shared investigation using a JSON payload (use - for stdin).
     Investigation {
-        #[arg(value_parser=["create","show","run","evidence","select","propose"])]
+        #[arg(value_parser=["create","show","plan","run","evidence","attach","select","propose"])]
         action: String,
         file: String,
     },

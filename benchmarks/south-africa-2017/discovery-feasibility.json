@@ -1,0 +1,55 @@
+{
+  "checked_on": "2026-11-13",
+  "scope": "Developer feasibility research, not agent inputs, an index snapshot or independent discovery evidence. No paid historical-index query was made. No credentials, paid access or 2017 coverage have been verified.",
+  "sources": [
+    {
+      "url": "https://dnslytics.com/api/reversehistory/",
+      "outcome": "documentation_retrieved",
+      "documented_capability": "Authenticated premium historical reverse AdSense/Analytics lookups with firstseen/lastseen dates. Example dates include 2017, but no guaranteed retention period, coverage for this case identifier or start/end query filters are documented.",
+      "documented_endpoint_template": "https://api.dnslytics.net/v1/reversehistory/<type>/<id>?apikey=<apikey>",
+      "requirements": ["API key", "Purchased API credits", "Separate approval before consuming paid credits"],
+      "documented_request_cost": {"credits": 20, "source_url": "https://dnslytics.com/api/", "notes": "Each requested page is charged; monetary credit-package prices were not retrievable."},
+      "historical_data_retrieved": false,
+      "coverage_for_case_verified": false,
+      "integration_caution": "Do not persist or log query-string API credentials. Historical index statements remain third-party leads; independently verify dated HTML before claiming shared literals."
+    },
+    {
+      "url": "https://dnslytics.com/api/",
+      "outcome": "documentation_retrieved",
+      "historical_data_retrieved": false,
+      "interpretation": "ReverseHistory is listed at 20 credits per request. Each page costs credits; this is not a verified monetary package price or authorization to spend."
+    },
+    {
+      "url": "https://search.dnslytics.com/pricing",
+      "outcome": "http_403",
+      "historical_data_retrieved": false,
+      "interpretation": "Credit-package monetary prices and minimum purchase could not be verified. No bypass or purchase attempted."
+    },
+    {
+      "url": "https://api.spyonweb.com/v1/docs",
+      "outcome": "connection_refused",
+      "historical_data_retrieved": false,
+      "interpretation": "The documentation endpoint was unreachable during this check, not proof that the whole service is permanently unavailable."
+    },
+    {
+      "url": "https://publicwww.com/websites/%22pub-8264869885899896%22/",
+      "outcome": "browser_verification_page",
+      "historical_data_retrieved": false,
+      "interpretation": "No usable domain/date rows were returned. No challenge bypass attempted. This is not an empty-result observation."
+    },
+    {
+      "url": "https://dnslytics.com/reverse-adsense/pub-8264869885899896",
+      "outcome": "http_404",
+      "historical_data_retrieved": false,
+      "interpretation": "This candidate public route was unusable. It does not establish index absence or lack of historical associations."
+    },
+    {
+      "url": "https://whitemonopolycapital.com.cutestat.com/",
+      "outcome": "http_403",
+      "historical_data_retrieved": false,
+      "interpretation": "A public search surfaced this profile, but its body was not retrievable. The snippet was not promoted into case evidence or supplied to the seed-only case as a comparison site."
+    }
+  ],
+  "archive_preflight": "Further archived-index-page probes were not performed after the actual seed-only archive collector received HTTP 429. No alternate route, proxy, authentication bypass or automatic retry was used.",
+  "conclusion": "No usable reproducible historical reverse-index dataset was acquired in these checks. DNSlytics is a documented candidate, not a demonstrated working source for this case. A retained independently sourced export could also unblock fixture preparation; screenshots and published case conclusions cannot substitute for it."
+}

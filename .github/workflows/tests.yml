@@ -19,6 +19,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Install Node for frontend and control contracts
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
       - name: Install stable Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Check formatting
@@ -35,6 +39,18 @@ jobs:
           node --test integrations/auto-ontology/bootstrap-token.test.mjs integrations/auto-ontology/semantic-control.test.mjs integrations/auto-ontology/setup-cleanup.test.mjs
       - name: Build standalone runtime
         run: cargo +stable build --release --locked
+      - name: Install Python for optional agent integration tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Historical replay scorer regressions (offline)
+        run: make test-historical-replay
+      - name: Public-source reconstruction regressions (offline)
+        run: make test-source-reconstruction
+      - name: Inkling agent contracts and synthetic benchmark replay (no provider key)
+        env:
+          FIELDKIT_TEST_BINARY: target/release/fieldkit
+        run: make test-inkling
       - name: Check entry points
         run: |
           ./target/release/fieldkit doctor

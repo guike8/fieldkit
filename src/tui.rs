@@ -35,7 +35,7 @@ use std::{
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
-const VIEWS: [&str; 12] = [
+const VIEWS: [&str; 13] = [
     "Discovery",
     "Ontology",
     "Claims",
@@ -48,6 +48,7 @@ const VIEWS: [&str; 12] = [
     "Activity",
     "Reasoning",
     "Investigations",
+    "Graph",
 ];
 
 /// Restore the terminal on ordinary errors and unwinding, including setup errors.
@@ -97,6 +98,7 @@ enum View {
     Activity,
     Reasoning,
     Investigations,
+    Graph,
 }
 impl View {
     fn index(self) -> usize {
@@ -116,6 +118,7 @@ impl View {
             Self::Activity,
             Self::Reasoning,
             Self::Investigations,
+            Self::Graph,
         ][index % VIEWS.len()]
     }
     fn key(self) -> &'static str {
@@ -132,12 +135,14 @@ impl View {
             Self::Activity => "activity",
             Self::Reasoning => "reasoning",
             Self::Investigations => "investigations",
+            Self::Graph => "graph",
         }
     }
     fn shortcut(self) -> String {
         match self {
             Self::Reasoning => "b".into(),
             Self::Investigations => "w".into(),
+            Self::Graph => "G".into(),
             _ => ((self.index() + 1) % 10).to_string(),
         }
     }
@@ -287,6 +292,15 @@ enum WorkerKind {
     ProviderStatus,
 }
 
+#[derive(Default)]
+struct GraphNavigation {
+    focus: Option<String>,
+    history: Vec<(String, usize)>,
+    external: Option<(String, String)>,
+    present_pending: bool,
+    browse_nodes: bool,
+}
+
 struct Ui {
     workbench: Workbench,
     data: Value,
@@ -303,6 +317,8 @@ struct Ui {
     quitting: bool,
     refreshed_at: Instant,
     provider_status: Option<Value>,
+    activity_revision: u64,
+    graph: GraphNavigation,
 }
 
 fn safe(value: &str) -> String {
@@ -310,6 +326,55 @@ fn safe(value: &str) -> String {
         .chars()
         .filter(|ch| !ch.is_control() || matches!(ch, '\n' | '\t'))
         .collect()
+}
+// Graph labels are single-line source data, never terminal control/layout text.
+fn graph_inline(value: &str) -> String {
+    value.chars().map(|ch| {
+        if ch.is_control() || matches!(ch, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
+            ' '
+        } else {
+            ch
+        }
+    }).collect()
+}
+fn graph_node_label(node: &Value) -> String {
+    let value = node["value"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| node["value"].to_string());
+    format!(
+        "[{}] {}",
+        graph_inline(text(node, "type")),
+        graph_inline(&value)
+    )
+}
+// Compact table labels only: preserve exact node values and full inspector URLs.
+fn graph_neighbor_label(node: &Value) -> String {
+    let archived = || -> Option<String> {
+        if text(node, "type") != "url" {
+            return None;
+        }
+        let url = url::Url::parse(text(node, "value")).ok()?;
+        if url.host_str() != Some("web.archive.org") {
+            return None;
+        }
+        let (stamp, original) = url.path().strip_prefix("/web/")?.split_once('/')?;
+        let stamp = stamp.strip_suffix("id_").unwrap_or(stamp);
+        if stamp.len() != 14 || !stamp.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let captured = chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d%H%M%S").ok()?;
+        let original = url::Url::parse(original).ok()?;
+        Some(format!(
+            "[url] {} {}{} · archive",
+            captured.format("%Y-%m-%d"),
+            original.host_str()?,
+            original.path()
+        ))
+    };
+    archived()
+        .map(|label| graph_inline(&label))
+        .unwrap_or_else(|| graph_node_label(node))
 }
 fn array(value: &Value, key: &str) -> Vec<Value> {
     value[key].as_array().cloned().unwrap_or_default()
@@ -559,11 +624,15 @@ fn provider_details(status: &Value) -> String {
 
 impl Ui {
     fn new(workbench: Workbench) -> Result<Self> {
+        let activity_revision = workbench.store.activity_revision()?;
         let data = workbench.snapshot()?;
-        Ok(Self { workbench, data, view: View::Discovery, selected: [0; VIEWS.len()], child_selected: 0, child_focus: false,
+        let mut ui = Self { workbench, data, view: View::Discovery, selected: [0; VIEWS.len()], child_selected: 0, child_focus: false,
             filter: String::new(), inspector_scroll: 0, modal: None, worker: None,
             notice: "Press d to start discovery from a username, public URL, domain or search query. ? opens the guide.".into(),
-            notice_error: false, quitting: false, refreshed_at: Instant::now(), provider_status: None })
+            notice_error: false, quitting: false, refreshed_at: Instant::now(), provider_status: None,
+            activity_revision, graph: GraphNavigation::default() };
+        ui.sync_graph();
+        Ok(ui)
     }
 
     fn run_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -572,9 +641,8 @@ impl Ui {
             if self.quitting && self.worker.is_none() {
                 break;
             }
-            if self.worker.is_some() && self.refreshed_at.elapsed() > Duration::from_secs(1) {
-                self.refresh();
-            }
+            self.poll_case_changes();
+            self.present_graph_focus();
             terminal.draw(|frame| self.draw(frame))?;
             if event::poll(Duration::from_millis(100))? {
                 match event::read()? {
@@ -603,14 +671,176 @@ impl Ui {
         self.notice = message.into();
         self.notice_error = error;
     }
+    fn poll_case_changes(&mut self) {
+        if self.refreshed_at.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.refreshed_at = Instant::now();
+        match self.workbench.store.activity_revision() {
+            Ok(revision) if revision != self.activity_revision => self.refresh(),
+            Ok(_) => {}
+            Err(error) => self.notice(format!("Could not check case changes: {error:#}"), true),
+        }
+    }
     fn refresh(&mut self) {
+        // Read the revision first: changes racing with the snapshot are checked
+        // again next poll rather than accidentally acknowledged without a read.
+        let revision = self.workbench.store.activity_revision().ok();
         match self.workbench.snapshot() {
             Ok(data) => {
                 self.data = data;
+                if let Some(revision) = revision {
+                    self.activity_revision = revision;
+                }
                 self.refreshed_at = Instant::now();
+                self.sync_graph();
             }
             Err(error) => self.notice(format!("Could not refresh case: {error:#}"), true),
         }
+    }
+    fn graph_node(&self, id: &str) -> Option<&Value> {
+        self.data["graph"]["nodes"]
+            .as_array()?
+            .iter()
+            .find(|node| text(node, "id") == id)
+    }
+    fn graph_focus(&self) -> Option<&Value> {
+        self.graph
+            .focus
+            .as_deref()
+            .and_then(|id| self.graph_node(id))
+    }
+    fn sync_graph(&mut self) {
+        let entity_id = text(&self.data["graph_focus"], "entity_id");
+        let external = (!entity_id.is_empty()).then(|| {
+            (
+                entity_id.to_owned(),
+                text(&self.data["graph_focus"], "updated_at").to_owned(),
+            )
+        });
+        if external != self.graph.external {
+            self.graph.external = external.clone();
+            self.graph.present_pending = false;
+            if let Some((id, _)) = external {
+                if self.graph_node(&id).is_some() {
+                    self.graph.focus = Some(id);
+                    self.graph.present_pending = true;
+                    self.graph.history.clear();
+                    self.graph.browse_nodes = false;
+                    self.selected[View::Graph.index()] = 0;
+                    self.inspector_scroll = 0;
+                    if self.modal.is_some() || self.worker.is_some() {
+                        self.notice("Agent graph focus is ready; Graph will open after the current editor, picker or worker finishes.", false);
+                    }
+                } else {
+                    self.notice("Requested graph focus is outside source-backed latest-500 coverage; keeping the available local focus.", false);
+                }
+            }
+        }
+        if self.graph_focus().is_none() {
+            let preferred = text(&self.data["graph"], "focus_id");
+            self.graph.focus = self
+                .graph_node(preferred)
+                .or_else(|| {
+                    self.data["graph"]["nodes"]
+                        .as_array()
+                        .and_then(|nodes| nodes.first())
+                })
+                .map(|node| text(node, "id").to_owned());
+            self.graph.history.clear();
+            self.selected[View::Graph.index()] = 0;
+        }
+        let len = self.graph_records().len();
+        self.selected[View::Graph.index()] =
+            self.selected[View::Graph.index()].min(len.saturating_sub(1));
+        self.present_graph_focus();
+    }
+    fn present_graph_focus(&mut self) {
+        if self.graph.present_pending
+            && self.modal.is_none()
+            && self.worker.is_none()
+            && !self.quitting
+        {
+            self.graph.present_pending = false;
+            self.view = View::Graph;
+            self.filter.clear();
+            self.child_focus = false;
+            self.child_selected = 0;
+            self.inspector_scroll = 0;
+            self.notice("Agent graph focus received · Enter follows an observation; Backspace returns; o opens original evidence.", false);
+        }
+    }
+    fn graph_neighbor(&self, edge: &Value) -> Option<&Value> {
+        let focus = self.graph.focus.as_deref()?;
+        let neighbor = if text(edge, "source_id") == focus {
+            text(edge, "target_id")
+        } else if text(edge, "target_id") == focus {
+            text(edge, "source_id")
+        } else {
+            return None;
+        };
+        self.graph_node(neighbor)
+    }
+    fn graph_records(&self) -> Vec<Value> {
+        let needle = self.filter.to_lowercase();
+        if self.graph.browse_nodes {
+            return self.filtered(array(&self.data["graph"], "nodes"));
+        }
+        self.data["graph"]["edges"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|edge| {
+                let Some(neighbor) = self.graph_neighbor(edge) else {
+                    return false;
+                };
+                needle.is_empty()
+                    || format!("{} {}", edge, graph_node_label(neighbor))
+                        .to_lowercase()
+                        .contains(&needle)
+            })
+            .cloned()
+            .collect()
+    }
+    fn graph_follow(&mut self) {
+        let records = self.graph_records();
+        let Some(record) =
+            records.get(self.selected[View::Graph.index()].min(records.len().saturating_sub(1)))
+        else {
+            return;
+        };
+        let next = if self.graph.browse_nodes {
+            Some(record.clone())
+        } else {
+            self.graph_neighbor(record).cloned()
+        };
+        if let Some(next) = next {
+            let next_id = text(&next, "id").to_owned();
+            if self.graph.focus.as_deref() != Some(next_id.as_str()) {
+                if let Some(previous) = self.graph.focus.take() {
+                    self.graph
+                        .history
+                        .push((previous, self.selected[View::Graph.index()]));
+                }
+                self.graph.focus = Some(next_id);
+            }
+            self.graph.browse_nodes = false;
+            self.selected[View::Graph.index()] = 0;
+            self.inspector_scroll = 0;
+        }
+    }
+    fn graph_back(&mut self) {
+        while let Some((id, selected)) = self.graph.history.pop() {
+            if self.graph_node(&id).is_some() {
+                self.graph.focus = Some(id);
+                self.graph.browse_nodes = false;
+                self.selected[View::Graph.index()] =
+                    selected.min(self.graph_records().len().saturating_sub(1));
+                self.inspector_scroll = 0;
+                return;
+            }
+        }
+        self.notice("No previous graph focus. Left opens all source-backed nodes, including disconnected nodes.", false);
     }
     fn sessions(&self) -> Vec<Value> {
         let rows = if self.data["discovery"].is_array() {
@@ -684,6 +914,7 @@ impl Ui {
     }
     fn records(&self) -> Vec<Value> {
         let rows = match self.view {
+            View::Graph => return self.graph_records(),
             View::Discovery => return self.sessions(),
             View::Ontology => {
                 let mut values = array(&self.data["ontology"], "concepts");
@@ -706,7 +937,13 @@ impl Ui {
         } else {
             self.selected[self.view.index()]
         };
-        rows.get(index.min(rows.len().saturating_sub(1))).cloned()
+        rows.get(index.min(rows.len().saturating_sub(1)))
+            .cloned()
+            .or_else(|| {
+                (self.view == View::Graph && !self.graph.browse_nodes)
+                    .then(|| self.graph_focus().cloned())
+                    .flatten()
+            })
     }
     fn move_selection(&mut self, delta: isize) {
         let len = if self.child_focus {
@@ -732,6 +969,9 @@ impl Ui {
         self.child_focus = false;
         self.child_selected = 0;
         self.inspector_scroll = 0;
+        if self.view == View::Graph {
+            self.sync_graph();
+        }
     }
 
     fn spawn(
@@ -849,6 +1089,14 @@ impl Ui {
             KeyCode::Char('0') => self.change_view(9),
             KeyCode::Char('b') => self.change_view(View::Reasoning.index()),
             KeyCode::Char('w') => self.change_view(View::Investigations.index()),
+            KeyCode::Char('G') => self.change_view(View::Graph.index()),
+            KeyCode::Left | KeyCode::Right if self.view == View::Graph => {
+                self.graph.browse_nodes = key.code == KeyCode::Left;
+                self.selected[View::Graph.index()] = 0;
+                self.inspector_scroll = 0;
+            }
+            KeyCode::Enter if self.view == View::Graph => self.graph_follow(),
+            KeyCode::Backspace if self.view == View::Graph => self.graph_back(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
             KeyCode::Home => {
@@ -1862,8 +2110,11 @@ impl Ui {
         lines
     }
     fn planner_summary(&self) -> String {
+        if self.view == View::Graph {
+            return "Source observations · latest 500 reports · not verified identity".into();
+        }
         if self.view == View::Investigations {
-            return "Telegram investigation · human-reviewed findings".into();
+            return "Shared investigation · human-reviewed findings".into();
         }
         let session = if self.view == View::Reasoning {
             self.current()
@@ -1896,6 +2147,10 @@ impl Ui {
         format!("planner: NVIDIA · reasoning {used}/{budget}")
     }
     fn draw_records(&self, frame: &mut Frame, area: Rect) {
+        if self.view == View::Graph {
+            self.draw_graph(frame, area);
+            return;
+        }
         if self.view.has_children() {
             let panels = Layout::vertical([
                 Constraint::Length(7.min(area.height / 2).max(3)),
@@ -1953,6 +2208,272 @@ impl Ui {
                 true,
             );
         }
+    }
+    fn graph_diagram(&self) -> String {
+        let Some(focus) = self.graph_focus() else {
+            return "No source-backed nodes in latest 500 reports.\nManual/model assessments and findings do not populate this graph.".into();
+        };
+        let focus_label = format!("FOCUS {}", graph_node_label(focus));
+        let records = self.graph_records();
+        if self.graph.browse_nodes {
+            return format!(
+                "{focus_label}\n\nAll source-backed nodes, including disconnected ones.\nEnter focuses a typed node; Right returns to its edges."
+            );
+        }
+        let Some(edge) =
+            records.get(self.selected[View::Graph.index()].min(records.len().saturating_sub(1)))
+        else {
+            return format!(
+                "{focus_label}\n\nNo matching one-hop source observations.\nLeft: browse all nodes · Esc: clear search"
+            );
+        };
+        let neighbor = self
+            .graph_neighbor(edge)
+            .map(graph_node_label)
+            .unwrap_or_default();
+        let relation = graph_inline(text(edge, "relation"));
+        if text(edge, "source_id") == text(focus, "id") {
+            format!(
+                "{focus_label}\n  │ {relation} (attributed)\n  └──→ {neighbor}\n→ outgoing · ← incoming relative to focus"
+            )
+        } else {
+            format!(
+                "{neighbor}\n  │ {relation} (attributed)\n  └──→ {focus_label}\n→ outgoing · ← incoming relative to focus"
+            )
+        }
+    }
+    fn draw_graph(&self, frame: &mut Frame, area: Rect) {
+        let compact = area.height < 11;
+        let panels = Layout::vertical([
+            Constraint::Length(if compact { 2.min(area.height) } else { 8 }),
+            Constraint::Min(0),
+        ])
+        .split(area);
+        let diagram = if compact {
+            self.graph_focus()
+                .map(|node| format!("FOCUS {}", graph_node_label(node)))
+                .unwrap_or_else(|| "No source-backed nodes · latest 500 reports".into())
+        } else {
+            self.graph_diagram()
+        };
+        let diagram = Paragraph::new(diagram).wrap(Wrap { trim: false });
+        if compact {
+            frame.render_widget(diagram, panels[0]);
+        } else {
+            frame.render_widget(
+                diagram.block(
+                    Block::bordered()
+                        .border_style(Style::default().fg(DIM))
+                        .title(" One-hop observation · latest 500 reports "),
+                ),
+                panels[0],
+            );
+        }
+        let records = self.graph_records();
+        let rows: Vec<Row> = records
+            .iter()
+            .map(|record| {
+                if self.graph.browse_nodes {
+                    Row::new(vec![
+                        graph_inline(text(record, "type")),
+                        graph_node_label(record),
+                        format!("{} ev", reference_ids(record).len()),
+                    ])
+                } else {
+                    let direction =
+                        if text(record, "source_id") == self.graph.focus.as_deref().unwrap_or("") {
+                            "→ out"
+                        } else {
+                            "← in"
+                        };
+                    let neighbor = self
+                        .graph_neighbor(record)
+                        .map(graph_neighbor_label)
+                        .unwrap_or_default();
+                    Row::new(vec![
+                        direction.into(),
+                        graph_inline(text(record, "relation")),
+                        neighbor,
+                        format!("{} ev", reference_ids(record).len()),
+                    ])
+                }
+            })
+            .collect();
+        // Relations are nominal labels, not proportional marks: reserve their
+        // actual display width rather than truncating them at 30% of a split
+        // pane. Keep room for direction, citations and a readable neighbor;
+        // unusually long relations remain fully available in the inspector.
+        let relation_width = records
+            .iter()
+            .map(|record| Line::from(graph_inline(text(record, "relation"))).width())
+            .max()
+            .unwrap_or(8)
+            .max(8)
+            .min(area.width.saturating_sub(29) as usize)
+            .max(1) as u16;
+        let (header, widths) = if self.graph.browse_nodes {
+            (
+                vec!["Type", "Typed value (not identity)", "Cites"],
+                vec![
+                    Constraint::Length(12),
+                    Constraint::Min(8),
+                    Constraint::Length(5),
+                ],
+            )
+        } else {
+            (
+                vec!["Dir", "Relation", "Typed neighbor", "Cites"],
+                vec![
+                    Constraint::Length(5),
+                    Constraint::Length(relation_width),
+                    Constraint::Min(8),
+                    Constraint::Length(5),
+                ],
+            )
+        };
+        let mode = if self.graph.browse_nodes {
+            "Nodes"
+        } else {
+            "Edges"
+        };
+        let filter = if self.filter.is_empty() {
+            String::new()
+        } else {
+            format!(" · /{}", graph_inline(&self.filter))
+        };
+        let title = format!(
+            " {mode} {}{filter} · Left nodes / Right edges ",
+            records.len()
+        );
+        let mut state = TableState::default();
+        if !records.is_empty() {
+            state.select(Some(
+                self.selected[View::Graph.index()].min(records.len() - 1),
+            ));
+        }
+        frame.render_stateful_widget(
+            Table::new(rows, widths)
+                .header(Row::new(header).style(Style::default().fg(DIM)))
+                .block(
+                    Block::bordered()
+                        .border_style(Style::default().fg(DIM))
+                        .title(title),
+                )
+                .row_highlight_style(
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol("› "),
+            panels[1],
+            &mut state,
+        );
+        if records.is_empty() && panels[1].height > 4 {
+            frame.render_widget(
+                Paragraph::new("No matching records. Left browses nodes; Esc clears search.")
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().fg(DIM)),
+                Rect {
+                    x: panels[1].x + 1,
+                    y: panels[1].y + 3,
+                    width: panels[1].width.saturating_sub(2),
+                    height: panels[1].height.saturating_sub(4),
+                },
+            );
+        }
+    }
+    fn graph_inspector(&self) -> String {
+        let mut output = String::from(
+            "Latest 500 reports · source observations only.\nAttributed relations are NOT identity/ownership verification.\n\n",
+        );
+        if let Some(record) = self.current() {
+            if record.get("relation").is_some() {
+                let source = self
+                    .graph_node(text(&record, "source_id"))
+                    .map(graph_node_label)
+                    .unwrap_or_default();
+                let target = self
+                    .graph_node(text(&record, "target_id"))
+                    .map(graph_node_label)
+                    .unwrap_or_default();
+                output.push_str(&format!(
+                    "{source}\n  ── {} ──→\n{target}\nStatus: source_observation (not confirmed)\n",
+                    graph_inline(text(&record, "relation"))
+                ));
+                if record["review"].is_object() {
+                    output.push_str(&format!("Legacy claim review: {}\nSeparate from trusted finding review; never confirms this edge.\n{}\n",
+                        graph_inline(text(&record["review"], "status")), graph_inline(text(&record["review"], "review_note"))));
+                }
+            } else {
+                output.push_str(&format!(
+                    "{}\nTyped value, not a verified identity.\n",
+                    graph_node_label(&record)
+                ));
+            }
+            output.push_str("\nPROVENANCE · o opens original evidence\n");
+            let source_ids = strings(&record["source_ids"]);
+            for id in reference_ids(&record) {
+                output.push_str(&format!("Evidence: {}\n", graph_inline(&id)));
+                if let Some(evidence) = self.data["evidence"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|evidence| text(evidence, "id") == id)
+                {
+                    for (key, label) in [
+                        ("collector_status", "Collector"),
+                        ("run_id", "Run"),
+                        ("collected_at", "Collected"),
+                        ("report_sha256", "Report SHA256"),
+                        ("hash_scope", "Hash scope"),
+                    ] {
+                        if !text(evidence, key).is_empty() {
+                            output.push_str(&format!(
+                                "{label}: {}\n",
+                                graph_inline(text(evidence, key))
+                            ));
+                        }
+                    }
+                    for source in array(evidence, "sources").iter().filter(|source| {
+                        source_ids.iter().any(|id| id == text(source, "source_id"))
+                    }) {
+                        for (key, label) in [
+                            ("source_id", "Source"),
+                            ("url", "URL"),
+                            ("sha256", "Source SHA256"),
+                            ("hash_scope", "Source hash scope"),
+                            ("observed_at", "Source time"),
+                        ] {
+                            if !text(source, key).is_empty() {
+                                output.push_str(&format!(
+                                    "{label}: {}\n",
+                                    graph_inline(text(source, key))
+                                ));
+                            }
+                        }
+                    }
+                    output.push_str(
+                        "Analyst evidence assessments are separate from collector status.\n",
+                    );
+                } else {
+                    output.push_str(
+                        "Evidence outside the current bounded view; inspect the case export.\n",
+                    );
+                }
+                output.push('\n');
+            }
+            output.push_str("RECORD\n");
+            output.push_str(&graph_inline(
+                &serde_json::to_string(&record).unwrap_or_default(),
+            ));
+        } else {
+            output.push_str("No matching source-backed records. Left browses all typed nodes, including disconnected nodes. Esc clears search.\n");
+        }
+        output.push_str("\n\nLIMITATIONS\n");
+        for limitation in strings(&self.data["graph"]["limitations"]) {
+            output.push_str(&format!("{}\n\n", graph_inline(&limitation)));
+        }
+        output
     }
     fn table(
         &self,
@@ -2062,7 +2583,9 @@ impl Ui {
         }
     }
     fn draw_inspector(&self, frame: &mut Frame, area: Rect) {
-        let text = if let Some(record) = self.current() {
+        let text = if self.view == View::Graph {
+            self.graph_inspector()
+        } else if let Some(record) = self.current() {
             let references = reference_ids(&record);
             let mut prelude = String::new();
             if !references.is_empty() {
@@ -2187,8 +2710,10 @@ impl Ui {
         frame.render_widget(widget, area);
     }
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let keys = if self.view == View::Investigations {
-            "d new question  Enter parents/children  g run step  r review finding  o citations"
+        let keys = if self.view == View::Graph {
+            "j/k select  Enter follow  Backspace back  ← nodes  → edges  o evidence  / search"
+        } else if self.view == View::Investigations {
+            "d new question  Enter children  g run step  r review finding  o citations  G graph"
         } else if self.view == View::Discovery {
             "d new  m planner  g run/resume  p pause  b reasoning  z NVIDIA status"
         } else if self.view == View::Reasoning {
@@ -2420,6 +2945,9 @@ TELEGRAM INVESTIGATIONS\n\
 w  Open Investigations. d creates a question with an optional archive query, since/until dates and result limit. No model or provider selection is required. Ctrl+S saves locally without network access; Enter only changes fields. Blank query saves a question without collection steps.\n\
 Enter switches between investigations and their steps, followed by findings. g runs only the selected step in the background, never the whole plan. Archive results are historical third-party observations, not complete/live coverage or direct Telegram verification.\n\
 Findings remain pending_review until a human selects a finding, presses r, explicitly enters accepted/rejected and a rationale, then saves with Ctrl+S. Only accepted findings enter the summary. Review is local and never rewrites captured source evidence. Identity-sensitive conclusions require human judgment. o opens preserved citations through the Evidence view.\n\n\
+RELATIONSHIP GRAPH\n\
+G (uppercase) opens Graph from any view, including Investigations. The focused typed node and selected one-hop incoming/outgoing observation are shown with direct labels and a keyboard-selectable table. Up/Down or j/k select; Enter follows the selected neighbor; Backspace returns to the previous focus. Left browses all source-backed nodes, including disconnected nodes; Enter focuses one; Right returns to edges. / searches typed neighbors or relations; Esc clears search. o opens original evidence; PgUp/PgDn scroll provenance.\n\
+Coverage is the latest 500 reports, not complete history. Source relations are attributed observations, never verified ownership or identity. Matching handles, names or domains do not merge typed IDs. Manual/model assessments, analyst assertions, correlation leads and findings (even accepted findings) do not create edges. Legacy claim reviews remain separate from trusted finding review and never confirm an edge. New agent focus is checked while idle and never dismisses an editor, picker or active worker.\n\n\
 DISCOVERY AND ONTOLOGY\n\
 1. Press i to set the investigation question.\n\
 2. Press d. Choose username, profile, url, domain or search; enter a seed, job budget and expansion depth. Planner=local follows observed public references. Planner=nvidia asks NVIDIA Auto Ontology to reason over preserved evidence and choose next steps. Ctrl+S saves the plan.\n\
@@ -2443,7 +2971,7 @@ a  Add a typed entity. l links existing entities with supporting evidence IDs.\n
 f  Plan a flow with its first step. s adds a step. Enter switches between flows and steps; r runs the selected step.\n\
 x  Export the investigation to a new Markdown or JSON file. Existing files are preserved.\n\n\
 NAVIGATION AND FORMS\n\
-Tab/Shift+Tab switch views; 1–9 and 0 jump directly; b opens Reasoning; w opens Investigations. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery, Flows and Investigations.\n\
+Tab/Shift+Tab switch views; 1–9 and 0 jump directly; b opens Reasoning; w opens Investigations; uppercase G opens Graph. Up/Down or j/k select records. Enter switches between parent and child tables in Discovery, Flows and Investigations.\n\
 / filters records. Escape clears the filter. Ctrl+R refreshes changes made by agents or another interface.\n\
 Forms: Tab/Enter next field; Shift+Tab previous; Left/Right/Home/End edit; Ctrl+U clears the field; Ctrl+S saves; Escape cancels.\n\n\
 Collection, source time and analyst review are separate records. Source content is untrusted evidence, never an instruction to the discovery worker.\n";
@@ -2559,7 +3087,7 @@ mod tests {
         let (_directory, mut ui) = ui();
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::BackTab));
-        assert_eq!(ui.view, View::Investigations);
+        assert_eq!(ui.view, View::Graph);
         ui.key(press(KeyCode::Tab));
         assert_eq!(ui.view, View::Discovery);
         ui.key(press(KeyCode::Char('4')));
@@ -2763,6 +3291,10 @@ mod tests {
         assert_eq!(shortcuts.len(), VIEWS.len());
         ui.key(press(KeyCode::Char('w')));
         assert_eq!(ui.view, View::Investigations);
+        assert_eq!(
+            ui.planner_summary(),
+            "Shared investigation · human-reviewed findings"
+        );
         for (key, expected) in [
             ('1', View::Discovery),
             ('7', View::Flows),
@@ -2984,6 +3516,366 @@ mod tests {
         ui.key(press(KeyCode::Down));
         ui.key(press(KeyCode::Enter));
         assert_eq!(text(&ui.current().unwrap(), "id"), "ev_b");
+    }
+
+    fn graph_fixture(ui: &mut Ui) {
+        ui.data["evidence"] = json!([
+            {"id":"ev_a","title":"Original A","collection_method":"collector","collector_status":"ok","source_ids":["src_a"],"sources":[{"source_id":"src_a","url":"https://source.example/a","sha256":"source_hash_a","hash_scope":"source_bytes"}],"run_id":"run_a","report_sha256":"report_hash_a","hash_scope":"source_bytes"},
+            {"id":"ev_b","title":"Original B","collection_method":"collector","collector_status":"partial","source_ids":["src_b"],"sources":[{"source_id":"src_b","url":"https://source.example/b"}]}
+        ]);
+        ui.data["entities"] = json!([
+            {"id":"a","type":"username","value":"same","label":"VERIFIED OWNER","evidence_ids":["ev_a","ev_b"],"source_ids":["src_a","src_b"]},
+            {"id":"b","type":"profile_url","value":"https://b.example/same","evidence_ids":["ev_a"],"source_ids":["src_a"]},
+            {"id":"c","type":"profile_url","value":"https://c.example/same","evidence_ids":["ev_b"],"source_ids":["src_b"]},
+            {"id":"z","type":"domain","value":"disconnected.example","evidence_ids":["ev_a"],"source_ids":["src_a"]}
+        ]);
+        ui.data["links"] = json!([
+            {"id":"link_a","source_id":"a","target_id":"b","relation":"public_profile_at","status":"observed","evidence_ids":["ev_a"],"source_ids":["src_a"]},
+            {"id":"link_b","source_id":"c","target_id":"a","relation":"declares_username","status":"observed","evidence_ids":["ev_b"],"source_ids":["src_b"]}
+        ]);
+        ui.data["graph"] = crate::graph::project(&ui.data);
+        ui.sync_graph();
+    }
+
+    #[test]
+    fn graph_shortcut_is_appended_and_existing_keys_keep_their_destinations() {
+        let (_directory, mut ui) = ui();
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Char('g')));
+        assert_eq!(ui.view, View::Investigations);
+        assert!(ui.worker.is_none());
+        ui.key(press(KeyCode::Char('G')));
+        assert_eq!(ui.view, View::Graph);
+        assert_eq!(View::Graph.index(), 12);
+        assert_eq!(View::Graph.shortcut(), "G");
+        ui.key(press(KeyCode::BackTab));
+        assert_eq!(ui.view, View::Investigations);
+        for (key, view) in [
+            ('4', View::Evidence),
+            ('5', View::Entities),
+            ('6', View::Links),
+            ('b', View::Reasoning),
+            ('w', View::Investigations),
+        ] {
+            ui.key(press(KeyCode::Char(key)));
+            assert_eq!(ui.view, view);
+        }
+        assert_eq!(
+            (0..VIEWS.len())
+                .map(|index| View::from_index(index).shortcut())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            VIEWS.len()
+        );
+    }
+    #[test]
+    fn graph_keyboard_follows_outgoing_and_incoming_edges_and_goes_back() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.key(press(KeyCode::Char('G')));
+        assert_eq!(ui.graph.focus.as_deref(), Some("a"));
+        assert_eq!(ui.records().len(), 2);
+        assert!(
+            ui.graph_diagram()
+                .contains("public_profile_at (attributed)")
+        );
+        assert!(
+            ui.graph_diagram()
+                .contains("└──→ [profile_url] https://b.example/same")
+        );
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("b"));
+        assert_eq!(ui.graph.history.len(), 1);
+        ui.key(press(KeyCode::Backspace));
+        assert_eq!(ui.graph.focus.as_deref(), Some("a"));
+        ui.key(press(KeyCode::Char('j')));
+        assert_eq!(ui.current().unwrap()["id"], "link_b");
+        assert!(
+            ui.graph_diagram()
+                .starts_with("[profile_url] https://c.example/same")
+        );
+        assert!(ui.graph_diagram().contains("└──→ FOCUS [username] same"));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("c"));
+        ui.key(press(KeyCode::Backspace));
+        assert_eq!(ui.graph.focus.as_deref(), Some("a"));
+        assert_eq!(ui.current().unwrap()["id"], "link_b");
+        ui.key(press(KeyCode::Char('k')));
+        assert_eq!(ui.current().unwrap()["id"], "link_a");
+    }
+    #[test]
+    fn graph_browses_disconnected_nodes_and_searches_typed_neighbor_values() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.key(press(KeyCode::Char('G')));
+        ui.filter = "c.example".into();
+        assert_eq!(ui.records().len(), 1);
+        assert_eq!(ui.current().unwrap()["id"], "link_b");
+        ui.key(press(KeyCode::Esc));
+        assert_eq!(ui.records().len(), 2);
+        ui.key(press(KeyCode::Left));
+        assert_eq!(ui.records().len(), 4);
+        ui.key(press(KeyCode::End));
+        assert_eq!(ui.current().unwrap()["id"], "z");
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("z"));
+        assert!(ui.records().is_empty());
+        assert_eq!(ui.current().unwrap()["id"], "z");
+        assert!(ui.graph_diagram().contains("No matching one-hop"));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("z"));
+        ui.key(press(KeyCode::Backspace));
+        assert_eq!(ui.graph.focus.as_deref(), Some("a"));
+        ui.key(press(KeyCode::Char('/')));
+        assert!(matches!(
+            ui.modal,
+            Some(Modal::Form(Form {
+                action: FormAction::Filter,
+                ..
+            }))
+        ));
+        ui.key(press(KeyCode::Esc));
+    }
+    #[test]
+    fn graph_evidence_uses_original_evidence_and_the_existing_multi_citation_picker() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.key(press(KeyCode::Char('G')));
+        ui.key(press(KeyCode::Char('o')));
+        assert_eq!(ui.view, View::Evidence);
+        assert_eq!(ui.current().unwrap()["id"], "ev_a");
+        ui.key(press(KeyCode::Char('G')));
+        ui.key(press(KeyCode::Left));
+        ui.key(press(KeyCode::Char('o')));
+        assert!(matches!(ui.modal, Some(Modal::EvidencePicker { .. })));
+        ui.key(press(KeyCode::Char('j')));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.view, View::Evidence);
+        assert_eq!(ui.current().unwrap()["id"], "ev_b");
+        ui.key(press(KeyCode::Char('G')));
+        ui.key(press(KeyCode::End));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("z"));
+        ui.key(press(KeyCode::Char('o')));
+        assert_eq!(ui.current().unwrap()["id"], "ev_a");
+    }
+    #[test]
+    fn graph_external_focus_changes_override_once_but_do_not_reset_local_navigation() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.data["graph_focus"] = json!({"id":"graph","entity_id":"a","updated_at":"one"});
+        ui.sync_graph();
+        ui.key(press(KeyCode::Char('G')));
+        ui.key(press(KeyCode::Enter));
+        assert_eq!(ui.graph.focus.as_deref(), Some("b"));
+        ui.sync_graph();
+        assert_eq!(ui.graph.focus.as_deref(), Some("b"));
+        assert_eq!(ui.graph.history.len(), 1);
+        ui.data["graph_focus"]["updated_at"] = json!("two");
+        ui.sync_graph();
+        assert_eq!(ui.graph.focus.as_deref(), Some("a"));
+        assert!(ui.graph.history.is_empty());
+        ui.data["graph_focus"]["entity_id"] = json!("c");
+        ui.sync_graph();
+        assert_eq!(ui.graph.focus.as_deref(), Some("c"));
+        ui.data["graph_focus"]["entity_id"] = json!("missing");
+        ui.sync_graph();
+        assert_eq!(ui.graph.focus.as_deref(), Some("c"));
+        assert!(ui.notice.contains("outside source-backed"));
+        ui.data["graph"]["nodes"] = json!([]);
+        ui.sync_graph();
+        assert!(ui.graph.focus.is_none());
+    }
+    #[test]
+    fn agent_focus_does_not_dismiss_an_editor_or_picker_and_is_presented_once_idle() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.key(press(KeyCode::Char('w')));
+        ui.key(press(KeyCode::Char('d')));
+        let Some(Modal::Form(form)) = &mut ui.modal else {
+            panic!("question editor");
+        };
+        form.fields[0].value = "Unsaved analyst question".into();
+        ui.data["graph_focus"] = json!({"id":"graph","entity_id":"c","updated_at":"one"});
+        ui.sync_graph();
+        assert_eq!(ui.view, View::Investigations);
+        let Some(Modal::Form(form)) = &ui.modal else {
+            panic!("editor was dismissed");
+        };
+        assert_eq!(form.fields[0].value, "Unsaved analyst question");
+        assert!(ui.graph.present_pending);
+        ui.key(press(KeyCode::Char('!')));
+        let Some(Modal::Form(form)) = &ui.modal else {
+            panic!("editor missing");
+        };
+        assert!(form.fields[0].value.contains('!'));
+        ui.key(press(KeyCode::Esc));
+        ui.present_graph_focus();
+        assert_eq!(ui.view, View::Graph);
+        assert_eq!(ui.graph.focus.as_deref(), Some("c"));
+        ui.key(press(KeyCode::Char('w')));
+        ui.sync_graph();
+        assert_eq!(
+            ui.view,
+            View::Investigations,
+            "unchanged focus must not steal navigation"
+        );
+        ui.modal = Some(Modal::EvidencePicker {
+            rows: vec![],
+            selected: 0,
+        });
+        ui.data["graph_focus"]["entity_id"] = json!("b");
+        ui.sync_graph();
+        assert_eq!(ui.view, View::Investigations);
+        assert!(matches!(ui.modal, Some(Modal::EvidencePicker { .. })));
+        ui.key(press(KeyCode::Esc));
+        ui.present_graph_focus();
+        assert_eq!(ui.view, View::Graph);
+        assert_eq!(ui.graph.focus.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn graph_inspector_exposes_provenance_and_keeps_legacy_review_distinct() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.data["graph"]["edges"][0]["review"] =
+            json!({"scope":"legacy_claim_review","status":"accepted","review_note":"Legacy only"});
+        ui.key(press(KeyCode::Char('G')));
+        let output = ui.graph_inspector();
+        for expected in [
+            "source_observation (not confirmed)",
+            "Legacy claim review: accepted",
+            "Separate from trusted finding review",
+            "Source: src_a",
+            "URL: https://source.example/a",
+            "Source SHA256: source_hash_a",
+            "Report SHA256: report_hash_a",
+            "Hash scope: source_bytes",
+            "Evidence: ev_a",
+            "Collector: ok",
+            "latest 500",
+            "ownership verification",
+        ] {
+            assert!(output.contains(expected), "missing {expected}");
+        }
+        assert!(!output.contains("VERIFIED OWNER"));
+        assert!(output.contains("[username] same"));
+    }
+    #[test]
+    fn graph_source_labels_cannot_inject_terminal_or_direction_controls() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.data["graph"]["nodes"][0]["value"] = json!("same\u{1b}[2J\n\t\u{202e}fake");
+        ui.data["graph"]["edges"][0]["relation"] = json!("links\r\u{7}\u{2066}to");
+        ui.data["evidence"][0]["sources"][0]["url"] =
+            json!("https://source.example/\u{1b}]52;evil\u{7}");
+        ui.key(press(KeyCode::Char('G')));
+        for output in [ui.graph_diagram(), ui.graph_inspector()] {
+            assert!(!output.contains('\u{1b}'));
+            assert!(!output.contains('\u{7}'));
+            assert!(!output.contains('\u{202e}'));
+            assert!(!output.contains('\u{2066}'));
+            assert!(!output.contains('\r'));
+        }
+        assert!(!graph_node_label(ui.graph_focus().unwrap()).contains('\n'));
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        assert!(!buffer_text(&terminal).contains('\u{1b}'));
+    }
+    #[test]
+    fn graph_archive_neighbors_show_date_and_domain_without_changing_typed_values() {
+        let node = json!({"type":"url","value":"https://web.archive.org/web/20170618170502id_/http://www.wmc-scams.com:80/"});
+        assert_eq!(
+            graph_neighbor_label(&node),
+            "[url] 2017-06-18 www.wmc-scams.com/ · archive"
+        );
+        assert!(graph_node_label(&node).contains("https://web.archive.org/web/20170618170502id_/"));
+        let later = json!({"type":"url","value":"https://web.archive.org/web/20170724074639id_/http://www.publicopinion.co.za:80/"});
+        assert!(
+            graph_neighbor_label(&later).starts_with("[url] 2017-07-24 www.publicopinion.co.za/")
+        );
+        for value in [
+            "https://web.archive.org.evil.invalid/web/20170618170502id_/http://example.org/",
+            "https://web.archive.org/web/20179999170502id_/http://example.org/",
+            "https://web.archive.org/web/20170618170502id_/not-an-original-url",
+        ] {
+            let node = json!({"type":"url","value":value});
+            assert_eq!(graph_neighbor_label(&node), graph_node_label(&node));
+        }
+    }
+    #[test]
+    fn graph_renders_focused_empty_disconnected_and_small_terminal_states() {
+        let (_directory, mut ui) = ui();
+        graph_fixture(&mut ui);
+        ui.key(press(KeyCode::Char('G')));
+        for (width, height) in [
+            (160, 48),
+            (120, 36),
+            (100, 30),
+            (80, 24),
+            (55, 15),
+            (30, 8),
+            (1, 1),
+        ] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| ui.draw(frame)).unwrap();
+            if width >= 55 {
+                let output = buffer_text(&terminal);
+                assert!(output.contains("G:Graph"));
+                assert!(output.contains("FOCUS"));
+                if width >= 80 {
+                    for relation in ["public_profile_at", "declares_username"] {
+                        assert!(
+                            output.contains(relation),
+                            "relation {relation} clipped at {width}x{height}"
+                        );
+                    }
+                }
+            }
+        }
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        terminal.draw(|frame| ui.draw(frame)).unwrap();
+        let output = buffer_text(&terminal);
+        for expected in [
+            "One-hop observation",
+            "public_profile_at",
+            "declares_username",
+            "→ out",
+            "← in",
+            "PROVENANCE",
+        ] {
+            assert!(output.contains(expected), "missing {expected}");
+        }
+        ui.data["graph"] = crate::graph::project(&json!({}));
+        ui.sync_graph();
+        ui.key(press(KeyCode::Enter));
+        ui.key(press(KeyCode::Backspace));
+        ui.key(press(KeyCode::Down));
+        ui.key(press(KeyCode::Char('o')));
+        for (width, height) in [(120, 36), (80, 24), (55, 15)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| ui.draw(frame)).unwrap();
+            assert!(buffer_text(&terminal).contains("G:Graph"));
+        }
+    }
+    #[test]
+    fn idle_case_poll_refreshes_only_when_activity_revision_changes() {
+        let (_directory, mut ui) = ui();
+        ui.data["sentinel"] = json!("kept without full snapshot");
+        ui.refreshed_at = Instant::now() - Duration::from_secs(2);
+        ui.poll_case_changes();
+        assert_eq!(ui.data["sentinel"], "kept without full snapshot");
+        ui.workbench
+            .store
+            .event("test.changed", "Synthetic local update", json!({}))
+            .unwrap();
+        ui.refreshed_at = Instant::now() - Duration::from_secs(2);
+        ui.poll_case_changes();
+        assert!(ui.data["sentinel"].is_null());
+        assert_eq!(
+            ui.activity_revision,
+            ui.workbench.store.activity_revision().unwrap()
+        );
     }
 
     #[test]

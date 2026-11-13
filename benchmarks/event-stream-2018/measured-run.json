@@ -1,0 +1,63 @@
+{
+  "benchmark": "event-stream-2018-dependency-introduction-v1",
+  "recorded_on": "2026-11-13",
+  "status": "bounded_reconstruction_verified",
+  "original_investigation_used_fieldkit": false,
+  "investigation_id": "investigation_7fb207f9c7b8416d9fc2d5454e24731a",
+  "local_case_path": "/Users/guize/fieldkit-event-stream-8xly8vrw/case",
+  "supplied_seeds": 1,
+  "successful_grounded_changed_file_pivots": 3,
+  "collection_steps_attempted": 4,
+  "outbound_collector_requests_including_redirects": 7,
+  "reports": 4,
+  "retained_artifacts_including_redirect_body": 5,
+  "final_response_bytes": 36023,
+  "case_integrity_ok": true,
+  "independent_sqlite_report_and_blob_hashes_ok": true,
+  "graph_nodes": 34,
+  "graph_edges": 34,
+  "graph_relations": {"contains_json_url": 31, "request_resolved_to": 3},
+  "pending_observation_drafts": 3,
+  "independently_verified_citations": 7,
+  "human_reviews": 0,
+  "accepted_summary_items": 0,
+  "source_backed_observations": {
+    "declared_runtime_dependency": "flatmap-stream",
+    "declared_range": "^0.1.0",
+    "locked_version": "0.1.0",
+    "manifest_snapshot_version": "3.3.5",
+    "runtime_source_contains_import_and_export": true,
+    "commit_patch_adds_declaration_and_import": true
+  },
+  "actual_tui": {
+    "sizes": ["170x42", "80x24"],
+    "requested_file_to_final_raw_response_navigation": true,
+    "original_evidence_inspector_opened": true,
+    "review_opened_and_cancelled_never_submitted": true
+  },
+  "navigation_only_before_after_check": {
+    "baseline_case_path": "/Users/guize/fieldkit-event-stream-olig_xlq/case",
+    "all_four_final_source_hashes_unchanged": true,
+    "baseline_edges": 31,
+    "after_edges": 34,
+    "added_request_response_bindings": 3,
+    "not_a_model_performance_baseline": true
+  },
+  "verification": {
+    "rust_tests_passed": 195,
+    "offline_benchmark_regressions_passed": 26,
+    "strict_clippy_passed": true,
+    "rustfmt_passed": true,
+    "release_build_passed": true,
+    "frontend_workflow_checks_passed": true,
+    "final_binary_offline_case_verification_passed": true
+  },
+  "blinded_model_trial": false,
+  "agent_performance_score": null,
+  "deterministic_capture_driver": true,
+  "interpretation_manually_inspected": true,
+  "full_incident_solved": false,
+  "payload_downloaded_or_executed": false,
+  "affected_installations_or_identity_attribution_established": false,
+  "interpretation": "One supplied commit led through retained JSON URL strings to three independently retained changed files. This verifies guided source expansion and a dependency-introduction slice, not open-ended agent discovery, malicious payload behavior, execution, affected installations, account control or a solved incident. The graph records source navigation, not dependency or fund-flow relationships. Raw bytes and protocol logs remain outside git."
+}

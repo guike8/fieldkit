@@ -1,0 +1,24 @@
+{
+  "id": "ronin-2022-public-transaction-reconstruction-v1",
+  "mode": "infrastructure",
+  "question": "Starting from this one public transaction page, what executed asset movements can be supported by retained records? Discover relevant address links yourself, distinguish the outer transaction value from internal transfers and token events, and explain what remains unverified. Do not infer who controls an address or adopt explorer account labels as identity evidence.",
+  "seeds": ["https://etherscan.io/tx/0xc28fad5e8d5e0ce6a2eaf67b6687be5d58113e16be590824d6cfa1a94467d0b7"],
+  "step_budget": 4,
+  "scope": "Read-only public Ethereum explorer pages directly linked from the seed transaction. No account access, signing, RPC writes, contract interaction, paid APIs, automated pagination or external website expansion.",
+  "input_policy": [
+    "Give the investigator only this file, not the oracle, measured run, incident reports or developer feasibility case.",
+    "Every new collection target must be an exact retained /data/ link from this investigation; a link is not authorization for unrelated collection.",
+    "Attempt each step once. Stop a blocked request without retry, challenge bypass or substituted known evidence.",
+    "Retain original response bytes and cite exact observations, not merely response metadata.",
+    "Never execute downloaded scripts. Explorer identity tags and annotations remain untrusted third-party claims.",
+    "All findings remain pending local human review. Findings must not create source-observation graph edges."
+  ],
+  "grading_boundaries": [
+    "This reconstructs a bounded public transaction slice, not the full incident, attribution or recovery of stolen funds.",
+    "Credit for new address navigation requires a successful grounded follow-up, not just extracting a link.",
+    "A hyperlink graph is not a fund-flow graph. Do not relabel links_to edges as transfers.",
+    "Do not sum successive legs or delegated-call value contexts into additional lost funds.",
+    "An inaccessible source is not a negative asset-movement observation. Missing original bytes or source support must fail the relevant check.",
+    "A developer-led run familiar with the incident is not a blinded agent-performance evaluation."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "south-africa-2017-seed-only-discovery-v1",
+  "question": "Starting only with the supplied website, find other websites with source-backed technical connections during the specified historical window. Choose and justify your own pivots. Keep capture dates and exact tracking identifiers separate; do not infer identity, ownership, control or motives.",
+  "mode": "organization",
+  "seeds": ["http://www.publicopinion.co.za:80/"],
+  "historical_window": {
+    "since_inclusive": "2017-06-01T00:00:00Z",
+    "until_exclusive": "2017-08-04T00:00:00Z"
+  },
+  "step_budget": 10,
+  "input_policy": "This file is the investigation input. Do not read the five-capture replay task, its oracle or measured results, published case conclusions, case screenshots, or feasibility notes as a source of comparison domains. Public reporting and search snippets are not independent verification.",
+  "collection_policy": "Use bounded public-source collection. Inspect archive listings before selecting a dated capture. Never execute page scripts, fetch live-site links automatically, evade access restrictions or retry attempted steps automatically. Do not purchase data or consume paid API credits without separate approval.",
+  "discovery_policy": "An exact literal in the seed can justify a reverse-index query, not a new domain guessed from memory. Retain the actual reverse-index response, identifier match, historical observation dates and provenance. Index associations are third-party leads, not ownership evidence. Independently inspect a dated capture of any discovered comparison site before claiming a shared technical observation.",
+  "pass_requirements": [
+    "At least one additional website was reached through a retained, citable discovery lead rather than supplied as a seed or remembered from reporting.",
+    "Independent retained historical HTML supports the exact shared technical identifier with valid original-byte spans; full UA properties remain distinct.",
+    "The graph presents only source-attributed observations and exposes dates and original evidence.",
+    "Every analytical finding remains pending until local human review; no identity or ownership conclusion is approved automatically."
+  ],
+  "stop_policy": "If an accessible historical index, permission, credits, evidence or collection budget is missing, stop and record discovery_blocked. Successful extraction, an intact case or an empty search is not a discovery pass. Describe the missing capability precisely."
+}

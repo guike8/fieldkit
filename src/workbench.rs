@@ -661,6 +661,29 @@ impl Workbench {
         result
     }
 
+    pub fn case_graph(&self) -> Result<Value> {
+        Ok(self.snapshot()?["graph"].clone())
+    }
+
+    pub fn focus_graph(&self, entity: &str) -> Result<Value> {
+        checked(entity, "Graph node", 256, false)?;
+        let graph = self.case_graph()?;
+        ensure!(
+            graph["nodes"]
+                .as_array()
+                .is_some_and(|nodes| nodes.iter().any(|node| node["id"] == entity)),
+            "Choose an existing source-backed graph node"
+        );
+        let focus = json!({"id":"graph","entity_id":entity,"updated_at":now()});
+        self.store.put("workspace_views", &focus)?;
+        self.store.event(
+            "graph.focus_changed",
+            "Agent selected a source-backed graph neighborhood",
+            focus.clone(),
+        )?;
+        Ok(focus)
+    }
+
     pub fn snapshot(&self) -> Result<Value> {
         let mut state = self.materialized()?;
         let correlations = self.correlations_from(&state)?;
@@ -682,6 +705,13 @@ impl Workbench {
         state["ontology"] = self.ontology_snapshot()?;
         state["reasoning"] = json!(self.store.list("reasoning")?);
         state["nvidia"] = crate::reasoning::summary();
+        state["graph_focus"] = self
+            .store
+            .list("workspace_views")?
+            .into_iter()
+            .find(|view| view["id"] == "graph")
+            .unwrap_or(Value::Null);
+        state["graph"] = crate::graph::project(&state);
         state["stats"] = json!({"evidence":state["evidence"].as_array().unwrap().len(),"entities":state["entities"].as_array().unwrap().len(),"links":state["links"].as_array().unwrap().len(),"correlations":correlations.len(),"flows":state["flows"].as_array().unwrap().len(),"notes":state["notes"].as_array().unwrap().len(),"candidate_leads":correlations.iter().filter(|c|c["status"]=="candidate").count(),"runs":state["summary"]["run_count"]});
         Ok(state)
     }

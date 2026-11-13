@@ -1,0 +1,44 @@
+{
+  "id": "south-africa-2017-tracking-replay-v1",
+  "question": "What technical connections, if any, are supported by these dated website captures? Distinguish exact tracking properties from publisher identifiers, keep capture dates separate, and do not infer ownership, identity or motives.",
+  "mode": "organization",
+  "track": "bounded historical evidence replay, not one-seed network discovery",
+  "source_policy": "Use only the supplied archived HTML and retained source bytes. Never execute page scripts or follow live-site links. A literal in source code does not prove tracking executed or establish ownership. No credit for facts remembered from published reporting.",
+  "inputs": [
+    {
+      "id": "publicopinion-20170724",
+      "original_url": "http://www.publicopinion.co.za:80/",
+      "archive_timestamp": "20170724074639",
+      "url": "https://web.archive.org/web/20170724074639id_/http://www.publicopinion.co.za:80/",
+      "sha256": "21702d55746d27d6e30849c4cc2fd377be7a0617bc63dcd966803fc2e6ef6101"
+    },
+    {
+      "id": "wmc-20170618",
+      "original_url": "http://www.wmc-scams.com:80/",
+      "archive_timestamp": "20170618170502",
+      "url": "https://web.archive.org/web/20170618170502id_/http://www.wmc-scams.com:80/",
+      "sha256": "e906527ed63c0006f12aba743796947f4ab60942f652b915ca9f2e36f89f1788"
+    },
+    {
+      "id": "wmc-20170714",
+      "original_url": "http://www.wmc-scams.com:80/",
+      "archive_timestamp": "20170714131204",
+      "url": "https://web.archive.org/web/20170714131204id_/http://www.wmc-scams.com:80/",
+      "sha256": "ac169f0d48e6c48153fe61a99f5054b4c79cc9278ae733b13866f116423f0834"
+    },
+    {
+      "id": "wmc-20170726",
+      "original_url": "http://www.wmc-scams.com:80/",
+      "archive_timestamp": "20170726153152",
+      "url": "https://web.archive.org/web/20170726153152id_/http://www.wmc-scams.com:80/",
+      "sha256": "1409fd9bdd338a452a6c57e3dec24b915c444c5a17bdc57dc9add63b165ad809"
+    },
+    {
+      "id": "wmc-20170727",
+      "original_url": "http://www.wmc-scams.com:80/",
+      "archive_timestamp": "20170727121608",
+      "url": "https://web.archive.org/web/20170727121608id_/http://www.wmc-scams.com:80/",
+      "sha256": "ed89565756e0cc8262641651edd869b2e3fedb53a600f2c48106f736a70f5dc2"
+    }
+  ]
+}

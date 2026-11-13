@@ -390,6 +390,18 @@ impl Store {
         Ok(())
     }
 
+    /// Cheap notification token for shared-workspace consumers, not an integrity check.
+    pub fn activity_revision(&self) -> Result<u64> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT COALESCE(MAX(rowid),0) FROM wb_activity",
+                [],
+                |row| row.get::<_, i64>(0),
+            )?
+            .try_into()?)
+    }
+
     pub fn activity(&self) -> Result<Vec<Value>> {
         let conn = self.connection()?;
         let mut stmt = conn.prepare("SELECT payload,previous_hash,event_hash FROM wb_activity ORDER BY rowid DESC LIMIT 150")?;

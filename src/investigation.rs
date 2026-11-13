@@ -1,10 +1,28 @@
-//! Agent-neutral Telegram plans and immutable, locally reviewed analytical proposals.
+//! Agent-neutral investigation plans and immutable, locally reviewed analytical proposals.
 use crate::{
     Job, Workbench, collectors,
     model::{digest, id, now, text},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
+
+pub const RECON_COLLECTORS: &[&str] = &[
+    "username",
+    "profile",
+    "dns",
+    "rdap",
+    "ct",
+    "tls",
+    "http",
+    "archive",
+    "telegram-profile",
+    "telegram-messages",
+    "telegram-post",
+];
+
+fn external_collector(command: &str) -> bool {
+    RECON_COLLECTORS.contains(&command) || command == "telegram-search"
+}
 
 fn bounded(value: &str, maximum: usize) -> Result<()> {
     ensure!(
@@ -38,6 +56,134 @@ impl Workbench {
             json!({"id":record["id"]}),
         )?;
         self.investigation(text(&record, "id"))
+    }
+
+    pub fn create_recon_investigation(
+        &self,
+        question: &str,
+        mode: &str,
+        seeds: Vec<String>,
+    ) -> Result<Value> {
+        bounded(question, 4000)?;
+        ensure!(
+            ["person", "organization", "infrastructure"].contains(&mode),
+            "Unknown recon mode"
+        );
+        ensure!(
+            !seeds.is_empty() && seeds.len() <= 5,
+            "Supply 1–5 user-scoped seeds"
+        );
+        for seed in &seeds {
+            bounded(seed, 2048)?;
+            ensure!(
+                !seed.chars().any(char::is_control),
+                "Seeds cannot contain control characters"
+            );
+        }
+        let record = json!({"id":id("investigation"),"title":question.chars().take(160).collect::<String>(),"question":question,"mode":mode,"platform":"public_sources","seeds":seeds,"steps":[],"created_at":now(),"coverage":"Bounded public-source recon, not comprehensive surveillance. Source observations and candidate associations do not establish identity or ownership.","review_policy":"All analytical findings require local human review; proposals are not source evidence"});
+        self.store.put("investigations", &record)?;
+        self.store.event(
+            "investigation.created",
+            "Recon investigation scoped",
+            json!({"id":record["id"],"mode":mode}),
+        )?;
+        self.investigation(text(&record, "id"))
+    }
+
+    fn recon_grounding(
+        &self,
+        identifier: &str,
+        record: &Value,
+        target: &str,
+        lead: Option<&Value>,
+    ) -> Result<Value> {
+        if let Some(lead) = lead {
+            let pointer = text(lead, "pointer");
+            bounded(pointer, 128)?;
+            ensure!(
+                pointer.starts_with("/data/"),
+                "Lead pointer must select an exact observed data string"
+            );
+            let report = self.investigation_evidence(identifier, text(lead, "step_id"))?;
+            ensure!(
+                external_collector(text(&report, "command"))
+                    && ["ok", "partial"].contains(&text(&report, "status")),
+                "Lead must come from an external observed capture"
+            );
+            let observed = report
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .context("Lead must select a string, not a summary/object")?;
+            ensure!(
+                observed == target,
+                "Target must equal the cited observation exactly"
+            );
+            let sources = report["sources"]
+                .as_array()
+                .context("Lead has no sources")?;
+            ensure!(!sources.is_empty(), "Lead has no source bytes");
+            for source in sources {
+                self.store.source_bytes(text(source, "sha256"))?;
+            }
+            Ok(
+                json!({"origin":"observed_lead_not_identity","step_id":lead["step_id"],"run_id":report["run_id"],"pointer":pointer,"report_sha256":self.store.report_hash(text(&report,"run_id"))?,"observation_sha256":digest(serde_json::to_string(observed)?.as_bytes()),"sources":sources}),
+            )
+        } else {
+            ensure!(
+                record["seeds"]
+                    .as_array()
+                    .is_some_and(|seeds| seeds.iter().any(|s| s == target)),
+                "New targets require an exact observed lead in this investigation; do not invent scope"
+            );
+            Ok(json!({"origin":"provided_seed","value":target}))
+        }
+    }
+
+    /// The external agent chooses the next job; Fieldkit checks its literal grounding.
+    /// A source link is a lead, not authorization or an identity conclusion.
+    pub fn plan_investigation_step(
+        &self,
+        identifier: &str,
+        job: Job,
+        rationale: &str,
+        lead: Option<Value>,
+    ) -> Result<Value> {
+        bounded(rationale, 4000)?;
+        ensure!(
+            RECON_COLLECTORS.contains(&job.command.as_str()),
+            "Unsupported recon collector"
+        );
+        collectors::validate_job(&job)?;
+        let target = job.target.as_deref().context("Supply a scoped target")?;
+        let _lock = self.investigation_lock(identifier)?;
+        let mut record = self.store.get("investigations", identifier)?;
+        ensure!(
+            ["person", "organization", "infrastructure"].contains(&text(&record, "mode")),
+            "Plan recon steps in a recon investigation"
+        );
+        let grounding = self.recon_grounding(identifier, &record, target, lead.as_ref())?;
+        let steps = record["steps"]
+            .as_array_mut()
+            .context("Malformed investigation")?;
+        ensure!(
+            steps.len() < 10,
+            "Investigation accepts at most ten collection steps"
+        );
+        ensure!(
+            !steps.iter().any(|s| s["command"] == job.command
+                && s["target"] == target
+                && s["options"] == job.options),
+            "Job already planned or attempted; no automatic retries"
+        );
+        let step = json!({"id":id("step"),"command":job.command,"target":target,"options":job.options,"status":"pending","run_id":null,"error":null,"rationale":rationale,"grounding":grounding,"planned_at":now()});
+        steps.push(step.clone());
+        self.store.put("investigations", &record)?;
+        self.store.event(
+            "investigation.step_planned",
+            "Agent planned a grounded recon step",
+            json!({"id":identifier,"step":step}),
+        )?;
+        Ok(step)
     }
 
     pub fn investigation(&self, identifier: &str) -> Result<Value> {
@@ -91,9 +237,9 @@ impl Workbench {
         let _lock = self.investigation_lock(identifier)?;
         let mut record = self.store.get("investigations", identifier)?;
         let step = record["steps"]
-            .as_array_mut()
+            .as_array()
             .context("Malformed investigation")?
-            .iter_mut()
+            .iter()
             .find(|v| v["id"] == step_id)
             .context("Unknown investigation step")?;
         ensure!(
@@ -104,10 +250,29 @@ impl Workbench {
             json!({"command":step["command"],"target":step["target"],"options":step["options"]}),
         )?;
         ensure!(
-            ["telegram-search", "telegram-post"].contains(&job.command.as_str()),
+            external_collector(&job.command),
             "Unsupported investigation collector"
         );
         collectors::validate_job(&job)?;
+        if ["person", "organization", "infrastructure"].contains(&text(&record, "mode")) {
+            let grounding = &step["grounding"];
+            let lead = (grounding["origin"] == "observed_lead_not_identity").then_some(grounding);
+            ensure!(
+                self.recon_grounding(
+                    identifier,
+                    &record,
+                    job.target.as_deref().unwrap_or(""),
+                    lead
+                )? == *grounding,
+                "Step grounding changed; inspect evidence before replanning"
+            );
+        }
+        let step = record["steps"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|step| step["id"] == step_id)
+            .unwrap();
         step["status"] = json!("running");
         step["started_at"] = json!(now());
         self.store.put("investigations", &record)?;
@@ -166,6 +331,105 @@ impl Workbench {
         self.store.report(run)
     }
 
+    /// Read a bounded, original UTF-8 source slice belonging to this investigation.
+    /// This never collects, writes case state, or accepts a filesystem path.
+    pub fn investigation_source(
+        &self,
+        identifier: &str,
+        step_id: &str,
+        source_id: &str,
+        byte_start: usize,
+        max_bytes: usize,
+    ) -> Result<Value> {
+        bounded(source_id, 256)?;
+        ensure!(
+            (1..=16384).contains(&max_bytes),
+            "Read at most 16384 bytes per request"
+        );
+        // report() and source_bytes() verify the preserved report and blob hashes.
+        let report = self.investigation_evidence(identifier, step_id)?;
+        ensure!(
+            external_collector(text(&report, "command")),
+            "Read sources from external investigation captures only"
+        );
+        let source = report["sources"]
+            .as_array()
+            .context("Capture has no sources")?
+            .iter()
+            .find(|source| source["source_id"] == source_id)
+            .context("Source does not belong to this capture")?;
+        let bytes = self.store.source_bytes(text(source, "sha256"))?;
+        let original = std::str::from_utf8(&bytes).context("Source is not valid UTF-8")?;
+        ensure!(
+            original.is_char_boundary(byte_start),
+            "byte_start is out of bounds or splits a UTF-8 character"
+        );
+        let mut byte_end = byte_start.saturating_add(max_bytes).min(bytes.len());
+        while !original.is_char_boundary(byte_end) {
+            byte_end -= 1;
+        }
+        ensure!(
+            byte_end > byte_start || byte_start == bytes.len(),
+            "max_bytes is too small for the next UTF-8 character"
+        );
+        Ok(json!({
+            "step_id":step_id,"run_id":report["run_id"],"source_id":source_id,
+            "report_sha256":self.store.report_hash(text(&report,"run_id"))?,
+            "source_sha256":source["sha256"],"media_type":source["media_type"],
+            "encoding":"utf-8","byte_start":byte_start,"byte_end":byte_end,
+            "total_bytes":bytes.len(),"text":&original[byte_start..byte_end],
+            "truncated":byte_end < bytes.len(),
+            "next_byte_start":(byte_end < bytes.len()).then_some(byte_end),
+            "untrusted_content":true
+        }))
+    }
+
+    /// Attach only a preserved external capture from this case; never analyst/model output.
+    pub fn attach_investigation_capture(&self, identifier: &str, run_id: &str) -> Result<Value> {
+        bounded(run_id, 256)?;
+        let _lock = self.investigation_lock(identifier)?;
+        let mut record = self.store.get("investigations", identifier)?;
+        let report = self.store.report(run_id)?;
+        ensure!(
+            external_collector(text(&report, "command")),
+            "Only preserved external recon captures can be attached"
+        );
+        ensure!(
+            ["ok", "partial"].contains(&text(&report, "status")),
+            "Attach an observed result, not a failed/absent capture"
+        );
+        let sources = report["sources"]
+            .as_array()
+            .context("Capture has no sources")?;
+        ensure!(!sources.is_empty(), "Capture has no source bytes");
+        for source in sources {
+            self.store.source_bytes(text(source, "sha256"))?;
+        }
+        let steps = record["steps"]
+            .as_array_mut()
+            .context("Malformed investigation")?;
+        ensure!(
+            steps.len() < 10,
+            "Investigation accepts at most ten collection steps"
+        );
+        ensure!(
+            !steps.iter().any(|s| s["run_id"] == run_id),
+            "Capture already attached"
+        );
+        let step = json!({"id":id("step"),"command":report["command"],"target":report["target"],"options":{},"status":report["status"],"run_id":run_id,"error":report["errors"],"attached_at":now(),"origin":"preserved_case_capture","report_sha256":self.store.report_hash(run_id)?});
+        steps.push(step.clone());
+        record["coverage"] = json!(
+            "Bounded preserved external captures; archive results are historical third-party leads and public pages may be unavailable or changed. No complete coverage or identity attribution."
+        );
+        self.store.put("investigations", &record)?;
+        self.store.event(
+            "investigation.capture_attached",
+            "Preserved external capture attached",
+            json!({"id":identifier,"step":step}),
+        )?;
+        Ok(step)
+    }
+
     pub fn select_investigation_post(
         &self,
         identifier: &str,
@@ -175,8 +439,9 @@ impl Workbench {
         let _lock = self.investigation_lock(identifier)?;
         let report = self.investigation_evidence(identifier, search_step)?;
         ensure!(
-            report["command"] == "telegram-search",
-            "Select a result from an archive search"
+            ["telegram-search", "telegram-messages"].contains(&text(&report, "command"))
+                && ["ok", "partial"].contains(&text(&report, "status")),
+            "Select a result from an observed archive search or public preview"
         );
         let message = report["data"]["messages"]
             .as_array()
@@ -192,6 +457,19 @@ impl Workbench {
         };
         collectors::validate_job(&job)?;
         let mut record = self.store.get("investigations", identifier)?;
+        let grounding =
+            if ["person", "organization", "infrastructure"].contains(&text(&record, "mode")) {
+                Some(self.recon_grounding(
+                identifier,
+                &record,
+                target,
+                Some(
+                    &json!({"step_id":search_step,"pointer":format!("/data/messages/{index}/url")}),
+                ),
+            )?)
+            } else {
+                None
+            };
         let steps = record["steps"]
             .as_array_mut()
             .context("Malformed investigation")?;
@@ -205,7 +483,10 @@ impl Workbench {
                 .any(|s| s["command"] == "telegram-post" && s["target"] == target),
             "Post already selected"
         );
-        let step = json!({"id":id("step"),"command":job.command,"target":target,"options":{},"status":"pending","run_id":null,"error":null,"selected_from":{"step_id":search_step,"index":index,"run_id":report["run_id"]}});
+        let mut step = json!({"id":id("step"),"command":job.command,"target":target,"options":{},"status":"pending","run_id":null,"error":null,"selected_from":{"step_id":search_step,"index":index,"run_id":report["run_id"]}});
+        if let Some(grounding) = grounding {
+            step["grounding"] = grounding;
+        }
         steps.push(step.clone());
         self.store.put("investigations", &record)?;
         self.store.event(
@@ -219,12 +500,92 @@ impl Workbench {
     fn investigation_citation(&self, identifier: &str, citation: &Value) -> Result<Value> {
         let step_id = text(citation, "step_id");
         let pointer = text(citation, "pointer");
+        let byte_range =
+            if citation.get("byte_start").is_some() || citation.get("byte_end").is_some() {
+                ensure!(
+                    citation.get("pointer").is_none(),
+                    "Do not mix JSON pointers and original-body byte ranges"
+                );
+                bounded(text(citation, "source_id"), 256)?;
+                let start = citation["byte_start"]
+                    .as_u64()
+                    .context("Supply paired unsigned integer byte_start and byte_end")?;
+                let end = citation["byte_end"]
+                    .as_u64()
+                    .context("Supply paired unsigned integer byte_start and byte_end")?;
+                ensure!(
+                    start < end && end - start <= 16384,
+                    "Supply a nonempty half-open byte range of at most 16384 bytes"
+                );
+                Some((usize::try_from(start)?, usize::try_from(end)?))
+            } else {
+                bounded(pointer, 128)?;
+                None
+            };
         let report = self.investigation_evidence(identifier, step_id)?;
         ensure!(
             ["ok", "partial"].contains(&text(&report, "status")),
             "Cite an observed result, not a failed/absent capture"
         );
-        let observation = if report["command"] == "telegram-search" {
+        let raw_observation;
+        let observation = if byte_range.is_some()
+            || (report["command"] == "http" && citation["source_id"].is_string())
+        {
+            ensure!(
+                report["command"] == "http",
+                "Byte ranges require an HTTP capture"
+            );
+            let source_id = text(citation, "source_id");
+            bounded(source_id, 256)?;
+            let source = report["sources"]
+                .as_array()
+                .context("Capture has no sources")?
+                .iter()
+                .find(|source| source["source_id"] == source_id)
+                .context("Source does not belong to this capture")?;
+            let media_type = text(source, "media_type")
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            if let Some((start, end)) = byte_range {
+                ensure!(
+                    source["kind"] == "http"
+                        && source["http_status"]
+                            .as_u64()
+                            .is_some_and(|s| (200..300).contains(&s)),
+                    "Byte ranges require a retained successful HTTP 2xx source"
+                );
+                ensure!(
+                    ["text/html", "application/xhtml+xml", "text/plain"]
+                        .contains(&media_type.as_str()),
+                    "Byte ranges require an explicit HTML or plain-text source media type"
+                );
+                let bytes = self.store.source_bytes(text(source, "sha256"))?;
+                let original = std::str::from_utf8(&bytes).context("Source is not valid UTF-8")?;
+                let slice = original
+                    .get(start..end)
+                    .context("Byte range is out of bounds or splits a UTF-8 character")?;
+                raw_observation = json!(slice);
+                &raw_observation
+            } else {
+                ensure!(
+                    media_type == "application/json"
+                        || (media_type.starts_with("application/")
+                            && media_type.ends_with("+json")),
+                    "Cite a retained JSON response source"
+                );
+                raw_observation = serde_json::from_slice::<Value>(
+                    &self.store.source_bytes(text(source, "sha256"))?,
+                )
+                .context("Source is not valid JSON")?;
+                ensure!(pointer.starts_with('/'), "Supply a JSON source pointer");
+                raw_observation
+                    .pointer(pointer)
+                    .context("Unknown JSON source observation")?
+            }
+        } else if ["telegram-search", "telegram-messages"].contains(&text(&report, "command")) {
             let index = pointer
                 .strip_prefix("/data/messages/")
                 .and_then(|s| s.parse::<usize>().ok())
@@ -237,12 +598,21 @@ impl Workbench {
                 .as_array()
                 .and_then(|v| v.get(index))
                 .context("Unknown archive observation")?
+        } else if report["command"] == "telegram-post" {
+            ensure!(pointer == "/data", "Cite /data for a public post capture");
+            &report["data"]
         } else {
             ensure!(
-                report["command"] == "telegram-post" && pointer == "/data",
-                "Cite /data for a public post capture"
+                external_collector(text(&report, "command")),
+                "Cite external source observations only"
             );
-            &report["data"]
+            ensure!(
+                pointer == "/data" || pointer.starts_with("/data/"),
+                "Cite /data or an exact collector data pointer; raw HTTP JSON requires source_id"
+            );
+            report
+                .pointer(pointer)
+                .context("Unknown collector observation")?
         };
         let sources = report["sources"]
             .as_array()
@@ -251,9 +621,40 @@ impl Workbench {
         for source in sources {
             self.store.source_bytes(text(source, "sha256"))?;
         }
-        Ok(
-            json!({"step_id":step_id,"run_id":report["run_id"],"evidence_id":format!("evidence_{}",text(&report,"run_id")),"report_sha256":self.store.report_hash(text(&report,"run_id"))?,"pointer":pointer,"observation_sha256":digest(serde_json::to_string(observation)?.as_bytes()),"sources":sources,"scope":if report["command"]=="telegram-search"{"provider_archive_observation_not_direct_verification"}else{"public_page_capture_not_identity_attribution"}}),
-        )
+        let scope = match text(&report, "command") {
+            "http" if byte_range.is_some() => {
+                "http_original_text_byte_range_not_execution_or_attribution"
+            }
+            "telegram-search" => "provider_archive_observation_not_direct_verification",
+            "http" if citation["source_id"].is_string() => {
+                "external_json_observation_not_identity_attribution"
+            }
+            "http"
+                if pointer == "/data/tracking_identifiers"
+                    || pointer.starts_with("/data/tracking_identifiers/") =>
+            {
+                "http_static_tracking_extraction_not_execution_or_attribution"
+            }
+            "http" if pointer == "/data/json_urls" || pointer.starts_with("/data/json_urls/") => {
+                "http_json_url_observation_not_fetch_or_attribution"
+            }
+            "http" => "http_response_metadata_not_page_content",
+            "telegram-post" | "telegram-messages" | "telegram-profile" => {
+                "public_page_capture_not_identity_attribution"
+            }
+            _ => "collector_observation_not_identity_attribution",
+        };
+        let mut resolved = json!({"step_id":step_id,"run_id":report["run_id"],"evidence_id":format!("evidence_{}",text(&report,"run_id")),"report_sha256":self.store.report_hash(text(&report,"run_id"))?,"observation_sha256":digest(serde_json::to_string(observation)?.as_bytes()),"sources":sources,"scope":scope});
+        if let Some((start, end)) = byte_range {
+            resolved["byte_start"] = json!(start);
+            resolved["byte_end"] = json!(end);
+        } else {
+            resolved["pointer"] = json!(pointer);
+        }
+        if report["command"] == "http" && citation["source_id"].is_string() {
+            resolved["source_id"] = citation["source_id"].clone();
+        }
+        Ok(resolved)
     }
 
     pub fn propose_investigation_finding(

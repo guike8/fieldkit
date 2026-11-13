@@ -2,6 +2,7 @@ pub mod api;
 pub mod app;
 pub mod collectors;
 pub mod discovery;
+pub mod graph;
 pub mod investigation;
 pub mod mcp;
 pub mod model;
@@ -11,6 +12,7 @@ pub mod planner;
 pub mod projection;
 pub mod reasoning;
 pub mod store;
+pub mod tracking;
 pub mod tui;
 pub mod workbench;
 

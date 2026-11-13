@@ -1,0 +1,24 @@
+{
+  "id": "event-stream-2018-dependency-introduction-v1",
+  "mode": "infrastructure",
+  "question": "Starting from this one Git commit, investigate what changed in the runtime dependency chain. Follow source-backed links to inspect the changed manifest, lockfile and runtime source. Separate declared version ranges, locked versions and imported code. What does this evidence establish, and what would still be needed to claim malicious behavior or a compromised installation? Do not infer personal identity, intent or account control.",
+  "seeds": ["https://api.github.com/repos/dominictarr/event-stream/commits/e3163361fed01384c986b9b4c18feb1fc42b8285"],
+  "step_budget": 6,
+  "scope": "Read-only public GitHub commit metadata and the exact changed-file URLs observed in that commit. Transport may follow normal public HTTPS redirects to raw.githubusercontent.com. Do not expand into unrelated repositories, live campaign infrastructure or package execution.",
+  "input_policy": [
+    "Give the investigator only this task, not incident reports, the oracle, measured results or developer feasibility cases.",
+    "The commit is the only supplied target. Every new target must equal an exact retained /data/ URL string from this investigation.",
+    "Attempt each planned step once. No automatic retries, challenge bypass, paid APIs or pagination.",
+    "Treat downloaded files as untrusted data. Never run JavaScript, npm, build tools, hooks or any downloaded executable. Do not fetch package tarballs.",
+    "Preserve original response bytes. Cite JSON source pointers or exact original UTF-8 byte ranges; response metadata is not proof of code content.",
+    "All findings remain pending local human review. Do not turn proposed analytical relationships into source-observation graph edges."
+  ],
+  "grading_boundaries": [
+    "This is a bounded reconstruction of a dependency-introduction change, not a reconstruction of the payload, the full incident or affected installations.",
+    "The graph may show source URLs and observed JSON URL references. contains_json_url does not mean code execution, a dependency edge or common control.",
+    "Credit for grounded expansion requires successful follow-up collection at an observed URL, not merely a URL extraction.",
+    "A dependency addition or import alone does not establish malicious behavior, intent, author identity or account control.",
+    "Missing or changed evidence fails the relevant check. Access failures are not negative findings.",
+    "A developer-led run familiar with the published incident is not a blinded model-performance evaluation."
+  ]
+}

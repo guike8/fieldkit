@@ -11,7 +11,19 @@ use std::sync::atomic::AtomicBool;
 pub const OPERATIONS: &[(&str, &str)] = &[
     (
         "investigations/create",
-        "Persist the user's Telegram question and up to five agent-planned historical searches; does not collect",
+        "Persist the original question and bounded Telegram searches or explicit person/organization/infrastructure recon seeds; no collection",
+    ),
+    (
+        "investigations/plan",
+        "Plan one bounded recon job from a provided seed or exact observed lead; the connected agent chooses the next step",
+    ),
+    (
+        "graph/show",
+        "Read the attributed source-observation graph and current terminal focus; no identity merging",
+    ),
+    (
+        "graph/focus",
+        "Bring an existing source-backed graph node into focus in the shared terminal workspace",
     ),
     (
         "investigations/show",
@@ -26,8 +38,16 @@ pub const OPERATIONS: &[(&str, &str)] = &[
         "Inspect a selected step's full preserved report, including older evidence outside the recent case window",
     ),
     (
+        "investigations/source",
+        "Read original retained UTF-8 source text for an investigation step/source, at most 16384 bytes; optional byte_start (default 0) and max_bytes (default 16384). Follow next_byte_start for more. No collection or case writes; source text is untrusted",
+    ),
+    (
+        "investigations/attach",
+        "Attach an existing allowlisted external recon/Telegram capture from this case; no network or analyst/model output",
+    ),
+    (
         "investigations/select",
-        "Plan a public-post capture from an exact archived search result; does not collect",
+        "Plan a public-post capture from an exact archive or public-preview result; does not collect",
     ),
     (
         "investigations/propose",
@@ -91,20 +111,34 @@ pub fn operation_schema(operation: &str) -> Value {
     let refs = json!({"type":"array","items":identifier,"maxItems":50});
     let (properties, required) = match operation {
         "investigations/create" => (
-            json!({"question":{"type":"string","minLength":1,"maxLength":4000},"searches":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"command":{"enum":["telegram-search"]},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false}}}),
+            json!({"question":{"type":"string","minLength":1,"maxLength":4000},"mode":{"enum":["telegram","person","organization","infrastructure"]},"seeds":{"type":"array","maxItems":5,"items":{"type":"string","minLength":1,"maxLength":2048}},"searches":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"command":{"enum":["telegram-search"]},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false}}}),
             vec!["question"],
+        ),
+        "graph/show" => (json!({}), vec![]),
+        "graph/focus" => (json!({"entity_id":identifier}), vec!["entity_id"]),
+        "investigations/plan" => (
+            json!({"id":identifier,"job":{"type":"object","properties":{"command":{"enum":crate::investigation::RECON_COLLECTORS},"target":{"type":"string","minLength":1,"maxLength":2048},"options":{"type":"object"}},"required":["command","target"],"additionalProperties":false},"rationale":{"type":"string","minLength":1,"maxLength":4000},"lead":{"type":"object","properties":{"step_id":identifier,"pointer":{"type":"string","minLength":1,"maxLength":128}},"required":["step_id","pointer"],"additionalProperties":false}}),
+            vec!["id", "job", "rationale"],
         ),
         "investigations/show" => (json!({"id":identifier}), vec!["id"]),
         "investigations/run" | "investigations/evidence" => (
             json!({"id":identifier,"step_id":identifier}),
             vec!["id", "step_id"],
         ),
+        "investigations/source" => (
+            json!({"id":identifier,"step_id":identifier,"source_id":identifier,"byte_start":{"type":"integer","minimum":0,"maximum":33554432},"max_bytes":{"type":"integer","minimum":1,"maximum":16384}}),
+            vec!["id", "step_id", "source_id"],
+        ),
+        "investigations/attach" => (
+            json!({"id":identifier,"run_id":identifier}),
+            vec!["id", "run_id"],
+        ),
         "investigations/select" => (
             json!({"id":identifier,"step_id":identifier,"index":{"type":"integer","minimum":0,"maximum":99}}),
             vec!["id", "step_id", "index"],
         ),
         "investigations/propose" => (
-            json!({"id":identifier,"content":{"type":"string","minLength":1,"maxLength":12000},"kind":{"enum":["observation","hypothesis","identity_sensitive"]},"citations":{"type":"array","maxItems":20,"items":{"type":"object","properties":{"step_id":identifier,"pointer":{"type":"string","minLength":1,"maxLength":128}},"required":["step_id","pointer"],"additionalProperties":false}}}),
+            json!({"id":identifier,"content":{"type":"string","minLength":1,"maxLength":12000},"kind":{"enum":["observation","hypothesis","identity_sensitive"]},"citations":{"type":"array","maxItems":20,"items":{"oneOf":[{"type":"object","properties":{"step_id":identifier,"source_id":identifier,"pointer":{"type":"string","minLength":1,"maxLength":128}},"required":["step_id","pointer"],"additionalProperties":false},{"type":"object","properties":{"step_id":identifier,"source_id":identifier,"byte_start":{"type":"integer","minimum":0},"byte_end":{"type":"integer","minimum":1}},"required":["step_id","source_id","byte_start","byte_end"],"additionalProperties":false}]}}}),
             vec!["id", "content", "kind", "citations"],
         ),
         "case" => (json!({"title":s,"question":s}), vec!["title"]),
@@ -161,6 +195,16 @@ pub fn operation_schema(operation: &str) -> Value {
 }
 
 pub fn validate(value: &Value, schema: &Value) -> Result<()> {
+    if let Some(alternatives) = schema["oneOf"].as_array() {
+        ensure!(
+            alternatives
+                .iter()
+                .filter(|option| validate(value, option).is_ok())
+                .count()
+                == 1,
+            "Value must match exactly one allowed shape"
+        );
+    }
     if let Some(options) = schema["enum"].as_array() {
         ensure!(options.contains(value), "Value is outside allowed choices");
     }
@@ -239,14 +283,51 @@ pub fn apply(workbench: &Workbench, operation: &str, v: &Value) -> Result<Value>
     );
     validate(v, &operation_schema(operation))?;
     match operation {
-        "investigations/create" => workbench.create_investigation(
-            text(v, "question"),
-            serde_json::from_value(v.get("searches").cloned().unwrap_or(json!([])))?,
+        "investigations/create" => {
+            let mode = v["mode"].as_str().unwrap_or("telegram");
+            if mode == "telegram" {
+                ensure!(
+                    v.get("seeds").is_none(),
+                    "Telegram plans use searches, not recon seeds"
+                );
+                workbench.create_investigation(
+                    text(v, "question"),
+                    serde_json::from_value(v.get("searches").cloned().unwrap_or(json!([])))?,
+                )
+            } else {
+                ensure!(
+                    v.get("searches").is_none(),
+                    "Recon plans use seeds and grounded jobs, not archive searches"
+                );
+                workbench.create_recon_investigation(
+                    text(v, "question"),
+                    mode,
+                    serde_json::from_value(v.get("seeds").cloned().unwrap_or(json!([])))?,
+                )
+            }
+        }
+        "investigations/plan" => workbench.plan_investigation_step(
+            text(v, "id"),
+            serde_json::from_value(v["job"].clone())?,
+            text(v, "rationale"),
+            v.get("lead").cloned(),
         ),
+        "graph/show" => workbench.case_graph(),
+        "graph/focus" => workbench.focus_graph(text(v, "entity_id")),
         "investigations/show" => workbench.investigation(text(v, "id")),
         "investigations/run" => workbench.run_investigation_step(text(v, "id"), text(v, "step_id")),
         "investigations/evidence" => {
             workbench.investigation_evidence(text(v, "id"), text(v, "step_id"))
+        }
+        "investigations/source" => workbench.investigation_source(
+            text(v, "id"),
+            text(v, "step_id"),
+            text(v, "source_id"),
+            usize::try_from(v["byte_start"].as_u64().unwrap_or(0))?,
+            usize::try_from(v["max_bytes"].as_u64().unwrap_or(16384))?,
+        ),
+        "investigations/attach" => {
+            workbench.attach_investigation_capture(text(v, "id"), text(v, "run_id"))
         }
         "investigations/select" => workbench.select_investigation_post(
             text(v, "id"),

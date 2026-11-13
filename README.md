@@ -20,6 +20,22 @@ fieldkit tui --case cases/my-investigation
 
 The runtime is Rust throughout: collectors, SQLite storage, discovery, ontology, TUI, HTTP server, and MCP. The browser uses embedded HTML/CSS/JavaScript. Prior Python/C++ implementations are archived under `legacy/` for reference and are never invoked by the Rust runtime.
 
+## Agent-led recon and terminal graph
+
+Ask your connected MCP agent a scoped person, organization or infrastructure question. The agent preserves your question and explicit seeds, plans one justified collection step, inspects the evidence, and adapts. New targets must exactly match retained source observations; a matching handle or link never establishes identity or ownership. The persistent queue allows ten total steps, with no automatic retries.
+
+Press **G** for a source-attributed relationship neighborhood: **Enter** follows a neighbor, **Backspace** returns, **←/→** switches nodes/edges, and **o** opens evidence. An agent can present a neighborhood through `fieldkit_graph_focus`; the shared TUI refreshes on case activity without interrupting an open editor or review. The graph covers the latest 500 reports, not complete history, and analytical proposals never become source edges.
+
+The connected agent supplies the reasoning; Fieldkit does not embed another model client. All findings still require local review. See the [agent-led recon loop](AGENT_USAGE.md#agent-led-recon--terminal-relationship-graph) and [terminal guide](WORKBENCH.md).
+
+## Historical evidence benchmark
+
+The [South Africa 2017 replay](benchmarks/south-africa-2017/README.md) reconstructs a bounded technical connection from a published investigation using five hash-pinned archived pages. Static tracking literals retain original-byte spans and source-attributed graph edges. Acquisition is separate from offline scoring; no scripts execute and no identity/ownership conclusion is approved. This tests dated evidence reconstruction, **not** one-seed network discovery or autonomous-agent performance.
+
+## Public-source reconstruction benchmark
+
+The [event-stream 2018 source trial](benchmarks/event-stream-2018/README.md) starts with one commit URL and follows observed links to three changed files. It reconstructs a dependency declaration, locked version and runtime import with original-source citations. Actual MCP/TUI navigation is recorded; all findings remain pending. This is guided source expansion, **not** a blinded agent score, payload analysis or a solved incident.
+
 ## Natural-language Telegram investigations
 
 Ask a connected MCP agent a question such as “Which public Telegram posts discussed Bellingcat in January 2024?” The agent derives bounded archive queries, saves the original question, inspects returned observations, selects public posts for separate capture, and proposes cited findings in the shared case. Fieldkit remains agent/provider-neutral; the existing NVIDIA integration is unchanged.
